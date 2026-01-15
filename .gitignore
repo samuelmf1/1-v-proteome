@@ -210,3 +210,25 @@ __marimo__/
 .nextflow/
 .nextflow.log*
 work
+
+# Misc
+*.tar.gz
+slurm-*
+seq_lengths.tsv
+seq_stats.txt
+summary
+*.img
+mpl_config
+home_dir
+numba_cache
+targets.tsv
+example.tsv
+boltz_cache
+singularity_cache
+numba_cache
+mpl_cache
+boltz
+seq_files
+seq_files_json
+seq_files_yaml
+tmp
