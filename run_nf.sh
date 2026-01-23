@@ -2,7 +2,7 @@
 #SBATCH --job-name=nf-VLP                      # Job name
 #SBATCH --mem=8G                               # Job memory request
 #SBATCH --cpus-per-task=1                      # number of cpu per task
-#SBATCH --time=96:00:00
+#SBATCH --time=298:00:00
 
 # Load required modules
 module load nextflow

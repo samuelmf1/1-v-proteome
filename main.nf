@@ -94,7 +94,7 @@ process SETUP_BOLTZ_CACHE {
 
 process BOLTZ_PREDICT {
     tag "${target_id}_part${task.index}"
-    publishDir "${params.outdir}/${target_id}_results", mode: 'copy'
+
     
     input:
     tuple val(target_id), path(yaml_files)
@@ -106,7 +106,7 @@ process BOLTZ_PREDICT {
     
     script:
     """
-    predict_boltz.sh ${cache_dir} ${params.filetype} ${yaml_files}
+    predict_boltz.sh ${cache_dir} ${params.filetype} "${params.outdir}/${target_id}_results" ${yaml_files}
     """
 }
 
@@ -143,10 +143,10 @@ workflow {
     if (params.fold == "boltz") {
         UNPACK_INPUTS(inputs_archive_ch)
         
-        // Batch files into chunks of 1000 (~20 jobs for 20k files)
+        // Batch files into chunks of 2000 (~20 jobs for 20k files)
         UNPACK_INPUTS.out.input_files
             .flatMap { id, files -> 
-                def batches = files.collate(1000)
+                def batches = files.collate(2000)
                 batches.collect { batch -> tuple(id, batch) }
             }
             .set { boltz_batches_ch }

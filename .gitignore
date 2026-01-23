@@ -232,3 +232,10 @@ seq_files
 seq_files_json
 seq_files_yaml
 tmp
+inter
+af2_download_env
+alphafold2_db
+alphafold2_db
+test_inputs
+pipeline_trace.txt
+string_seqs.fa.gz
