@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-
+# interactions.py
 import json
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from itertools import combinations
 from Bio.PDB import MMCIFParser, NeighborSearch
+import os
 
 def find_boltz_files(base_dir):
     """Locate the necessary files within the Boltz results structure."""
@@ -25,7 +26,7 @@ def find_boltz_files(base_dir):
             "pae": next(pred_path.glob(f"pae_*{sample_id}*_model_0.npz")),
             "plddt": next(pred_path.glob(f"plddt_*{sample_id}*_model_0.npz")),
             "json": next(pred_path.glob(f"confidence_*{sample_id}*_model_0.json")),
-            "out_dir": pred_path
+            "outdir": pred_path
         }
     except StopIteration:
         raise FileNotFoundError(f"Missing one or more required files (.cif, .npz, .json) in {pred_path}")
@@ -48,10 +49,16 @@ def load_scores(files):
     with open(files["json"]) as f:
         summary = json.load(f)
     
+    plddt_scores = get_npz_data(files["plddt"])
+    # Auto-scale pLDDT if it's in [0, 1] range
+    if plddt_scores.max() <= 1.0:
+        plddt_scores = plddt_scores * 100.0
+
     return {
-        "plddt": get_npz_data(files["plddt"]),
+        "plddt": plddt_scores,
         "pae": get_npz_data(files["pae"]),
-        "iptm": summary.get("iptm", 0.0)
+        "iptm": summary.get("iptm", 0.0),
+        "ptm": summary.get("ptm", 0.0)
     }
 
 def get_residue_mapping(model):
@@ -127,6 +134,8 @@ def analyze_all_interfaces(files, scores, args):
             df_pair = pd.DataFrame(pair_data)
             df_pair['hotspot_A'] = df_pair['res_A'].map(df_pair['res_A'].value_counts())
             df_pair['hotspot_B'] = df_pair['res_B'].map(df_pair['res_B'].value_counts())
+            df_pair['iptm'] = round(scores['iptm'], 2)
+            df_pair['ptm'] = round(scores['ptm'], 2)
             all_data.append(df_pair)
 
     return pd.concat(all_data) if all_data else pd.DataFrame()
@@ -135,9 +144,10 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--dir", type=str, required=True, help="Top-level Boltz result directory")
-    parser.add_argument("--dist", type=float, default=4.5)
-    parser.add_argument("--plddt_min", type=float, default=50.0)
-    parser.add_argument("--pae_max", type=float, default=20.0)
+    parser.add_argument("--dist", type=float, default=4.0)
+    parser.add_argument("--plddt_min", type=float, default=70.0)
+    parser.add_argument("--pae_max", type=float, default=10.0)
+    parser.add_argument("--outdir", type=str, default="interactions")
     args = parser.parse_args()
 
     try:
@@ -155,14 +165,15 @@ def main():
             print(summary.to_string(index=False))
             print("-" * 45)
             
-            csv_path = files["out_dir"] / f"{sample_id}_interactions.csv"
+            os.makedirs(args.outdir, exist_ok=True)
+            csv_path = os.path.join(args.outdir, f"{sample_id}_interactions.csv")
             results.sort_values(["chain_A", "chain_B", "pae"]).to_csv(csv_path, index=False)
             
-            pml_path = files["out_dir"] / f"view_interactions.pml"
+            pml_path = os.path.join(args.outdir, f"view_{sample_id}_interactions.pml")
             generate_pymol_script(results, files["cif"], pml_path)
             
-            print(f"CSV results: {csv_path.name}")
-            print(f"PyMOL script: {pml_path.name}")
+            print(f"CSV results: {os.path.basename(csv_path)}")
+            print(f"PyMOL script: {os.path.basename(pml_path)}")
             print(f"Total High-Conf Contacts: {len(results)}")
         else:
             print("No high-confidence interactions found with current thresholds.")
