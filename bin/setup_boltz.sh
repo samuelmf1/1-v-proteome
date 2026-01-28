@@ -32,8 +32,17 @@ boltz predict dummy.yaml --cache "$CACHE_PATH" --use_msa_server --out_dir result
 
 # Manually download CORRECT Boltz-2 weights
 echo "Downloading correct Boltz-2 weights from Hugging Face..."
-wget -q -O "$CACHE_PATH/boltz2_conf.ckpt" "https://huggingface.co/boltz-community/boltz-2/resolve/main/boltz2_conf.ckpt"
-wget -q -O "$CACHE_PATH/boltz2_aff.ckpt" "https://huggingface.co/boltz-community/boltz-2/resolve/main/boltz2_aff.ckpt"
+if [ ! -f "$CACHE_PATH/boltz2_conf.ckpt" ]; then
+    wget -q -O "$CACHE_PATH/boltz2_conf.ckpt" "https://huggingface.co/boltz-community/boltz-2/resolve/main/boltz2_conf.ckpt"
+else
+    echo "boltz2_conf.ckpt already exists, skipping download."
+fi
+
+if [ ! -f "$CACHE_PATH/boltz2_aff.ckpt" ]; then
+    wget -q -O "$CACHE_PATH/boltz2_aff.ckpt" "https://huggingface.co/boltz-community/boltz-2/resolve/main/boltz2_aff.ckpt"
+else
+    echo "boltz2_aff.ckpt already exists, skipping download."
+fi
 
 # UNPACK CCD manually using standalone script
 echo "Unpacking CCD..."

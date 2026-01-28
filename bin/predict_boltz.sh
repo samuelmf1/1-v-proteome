@@ -27,7 +27,7 @@ nvidia-smi --query-gpu=timestamp,name,utilization.gpu,utilization.memory --forma
 export TMPDIR=$(mktemp -d -p /tmp 2>/dev/null || mktemp -d)
 
 # Performance Optimization for L40S (Tensor Cores)
-export TORCH_FLOAT32_MATMUL_PRECISION=medium # if lots of fails, switch to high
+export TORCH_FLOAT32_MATMUL_PRECISION=high # if lots of fails, switch to high
 
 if [ "$FILETYPE" != "yaml" ]; then
     echo "Error: filetype must be 'yaml' for Boltz-2"
@@ -59,16 +59,21 @@ for yaml_file in $YAML_FILES; do
     # Deduplication check
     if [ -d "${FINAL_OUTPUT_DIR}/${base_name}" ]; then
         echo "SKIPPING: ${base_name} (Already exists in ${FINAL_OUTPUT_DIR})"
+        # Satisfy Nextflow output requirement by linking existing result
+        mkdir -p results
+        # Use absolute path for safety
+        ABS_FINAL_OUTPUT=$(readlink -f "${FINAL_OUTPUT_DIR}")
+        ln -snf "${ABS_FINAL_OUTPUT}/${base_name}" "results/${base_name}"
         continue
     fi
     
     echo "Running Boltz-2 on $base_name"
     
-    # Boltz-2 prediction command
-    boltz predict "$yaml_file" \
+    # Boltz-2 prediction command using MAGMA backend to avoid CUSOLVER/Segfaults on L40S
+    python3 -c "import sys, torch; torch.backends.cuda.preferred_linalg_library('magma'); _org=torch.linalg.svd; torch.linalg.svd=lambda *a,**k: (k.pop('driver',None),_org(*a,**k))[1]; from boltz.main import cli; sys.exit(cli())" predict "$yaml_file" \
         --cache "home_dir/.boltz" \
         --use_msa_server \
-        --num_workers 23 \
+        --num_workers 0 \
         --out_dir "results/${base_name}"
 
     # Immediate Save: Copy results to final destination to save progress

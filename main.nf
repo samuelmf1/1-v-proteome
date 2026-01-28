@@ -110,11 +110,65 @@ process BOLTZ_PREDICT {
     """
 }
 
+process GENERATE_MONOMER_INPUTS {
+    tag "monomers"
+    publishDir "${params.outdir}/monomers/inputs", mode: 'copy'
+
+    input:
+    path targets_file
+
+    output:
+    path "monomers/*.yaml", emit: monomer_yamls
+
+    script:
+    """
+    mkdir -p monomers
+    generate_seq_inputs.py \\
+        --targets ${targets_file} \\
+        --filetype yaml \\
+        --outdir monomers
+    """
+}
+
+process BOLTZ_PREDICT_MONOMERS {
+    tag "monomers"
+    
+    input:
+    path yaml_files
+    path cache_dir
+    val ready // Dependency signal
+    
+    output:
+    path "results/**/*"
+    
+    script:
+    """
+    predict_boltz.sh ${cache_dir} yaml "${params.outdir}/monomers/results" ${yaml_files}
+    """
+}
+
 workflow {
     // 1. Prepare targets channel from TSV
     targets_ch = Channel.fromPath(params.targets)
         .splitCsv(sep: '\t', header: true)
         .map { row -> tuple(row.id, row.type, row.sequence) }
+
+    // Run Monomer Predictions (Targets only)
+    if (params.fold == "boltz") {
+         // Define central cache directory
+        def boltz_cache = file("${workflow.launchDir}/boltz_cache")
+        
+        // Run setup (download weights) ONCE
+        SETUP_BOLTZ_CACHE(boltz_cache)
+
+        // Generate Inputs for Monomers
+        GENERATE_MONOMER_INPUTS(file(params.targets))
+
+        // Run Prediction for Monomers
+        // Split list of files into chunks if needed, but for now passing all
+        // predict_boltz.sh can handle multiple files
+        BOLTZ_PREDICT_MONOMERS(GENERATE_MONOMER_INPUTS.out.monomer_yamls, boltz_cache, SETUP_BOLTZ_CACHE.out.ready)
+    }
 
     if (!params.skip_tarbell) {
         // 2. Prepare sequences channel (full file)
@@ -146,18 +200,14 @@ workflow {
         // Batch files into chunks of 2000 (~20 jobs for 20k files)
         UNPACK_INPUTS.out.input_files
             .flatMap { id, files -> 
-                def batches = files.collate(2000)
+                def batches = files.collate(1600)
                 batches.collect { batch -> tuple(id, batch) }
             }
             .set { boltz_batches_ch }
-
-        // Define central cache directory
-        def boltz_cache = file("${workflow.launchDir}/boltz_cache")
-        
-        // Run setup (download weights) ONCE
-        SETUP_BOLTZ_CACHE(boltz_cache)
         
         // Run predictions using the populated cache
+        // Note: SETUP_BOLTZ_CACHE and cache dir definition moved up
+        def boltz_cache = file("${workflow.launchDir}/boltz_cache")
         BOLTZ_PREDICT(boltz_batches_ch, boltz_cache, SETUP_BOLTZ_CACHE.out.ready)
     }
 }
