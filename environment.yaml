@@ -11,3 +11,4 @@ dependencies:
   - pip
   - pip:
     - pathlib
+    - git+https://github.com/idptools/sparrow.git

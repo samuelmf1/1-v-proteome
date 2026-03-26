@@ -11,4 +11,5 @@ export NXF_SINGULARITY_CACHEDIR="${PWD}/singularity_cache"
 
 # Run the pipeline
 rm -rf boltz_cache
-nextflow run main.nf -profile slurm --targets example.tsv --fold boltz --filetype yaml --skip_tarbell
+# nextflow run main.nf -profile slurm --targets example.tsv --fold boltz --filetype yaml
+nextflow run main.nf -profile slurm --targets targets.tsv --filetype json --squashfs
