@@ -1,0 +1,3387 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PPI Visualization</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        #controls {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 50px;
+            background: #000000;
+            color: white;
+            line-height: 50px;
+            padding: 0 20px;
+            box-sizing: border-box;
+            border-bottom: 1px solid #ccc;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+        }
+
+        #container {
+            position: absolute;
+            top: 140px;
+            left: 500px;
+            bottom: 10px;
+            right: 10px;
+        }
+
+        #viz-border {
+            position: absolute;
+            top: 140px;
+            left: 500px;
+            bottom: 10px;
+            right: 10px;
+            border: 2px solid transparent;
+            pointer-events: none;
+            /* Let clicks pass through */
+            z-index: 5;
+            box-sizing: border-box;
+        }
+
+        #sequence-viewer {
+            position: absolute;
+            top: 50px;
+            left: 0;
+            width: 100%;
+            height: 80px;
+            background: #fdfdfd;
+            border-bottom: 1px solid #ccc;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            z-index: 20;
+            padding: 2px 10px;
+            box-sizing: border-box;
+            font-family: monospace;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+
+        .seq-row {
+            margin-bottom: 0px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            width: max-content;
+            /* Ensure row expands for scrolling */
+        }
+
+        .seq-label {
+            display: inline-block;
+            width: 120px;
+            /* Reduced width */
+            min-width: 120px;
+            font-weight: bold;
+            font-size: 11px;
+            /* Smaller text */
+            position: sticky;
+            left: 0;
+            background: #fdfdfd;
+            z-index: 2;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            padding-right: 10px;
+            border-right: 1px solid #eee;
+            line-height: 22px;
+        }
+
+        .seq-residues {
+            display: inline-flex;
+            white-space: nowrap;
+        }
+
+        .residue {
+            display: inline-block;
+            width: 10px;
+            /* Smaller */
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            font-size: 10px;
+            /* Smaller text */
+            line-height: 22px;
+        }
+
+        #screenshot-btn:hover {
+            background-color: #0056b3;
+        }
+
+        /* Update screenshot button transition */
+        #screenshot-btn {
+            transition: left 0.3s ease, right 0.3s ease;
+        }
+
+        /* Ruler Styles */
+        .ruler-cell {
+            display: inline-block;
+            width: 10px;
+            /* Matches residue width */
+            text-align: left;
+            /* Align number to start */
+            font-size: 8px;
+            /* Smaller */
+            color: #888;
+            position: relative;
+            height: 15px;
+        }
+
+        .ruler-num {
+            position: absolute;
+            bottom: 0;
+            left: -10%;
+            /* Center the number on the tick mark if needed, or just left align */
+        }
+
+        .residue.interaction-residue {
+            background-color: #ffcccc;
+            /* Light red for interaction */
+            border-bottom: 2px solid red;
+        }
+
+        .residue.interaction-residue-B {
+            background-color: #ffe0b3;
+            /* Light orange */
+            border-bottom: 2px solid orange;
+        }
+
+        .residue.selected-residue {
+            background-color: #ccffcc !important;
+            /* Green for selection */
+            border: 1px solid green;
+        }
+
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+
+        select {
+            padding: 5px;
+            font-size: 16px;
+            max-width: 500px;
+        }
+
+        #metrics {
+            position: absolute;
+            top: 150px;
+            right: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            text-align: right;
+            max-width: 300px;
+        }
+
+        #protein-info {
+            position: absolute;
+            top: 140px;
+            left: 10px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 1);
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            font-size: 0.9em;
+            max-width: 295px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        #go-panel {
+            position: absolute;
+            top: 430px;
+            /* Shifted down: 140 start + ~290 height of protein info */
+            /* Below protein-info */
+            left: 10px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 1);
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            font-size: 0.9em;
+            max-width: 450px;
+            max-height: 625px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        #go-content h5 {
+            font-size: 1.1em;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            color: #222;
+            text-decoration: underline;
+        }
+
+        #go-content ul {
+            padding-left: 20px;
+            margin: 0;
+        }
+
+        #go-content li {
+            margin-bottom: 8px;
+        }
+
+        #string-panel {
+            position: absolute;
+            top: 140px;
+            left: 345px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 1);
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            font-size: 0.9em;
+            max-width: 270px;
+            max-height: 250px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        #string-panel h4 {
+            margin: 0 0 5px 0;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
+        }
+
+        #string-content table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #string-content th,
+        #string-content td {
+            text-align: left;
+            padding: 4px;
+            border-bottom: 1px solid #eee;
+        }
+
+        #string-content th {
+            font-weight: bold;
+            color: #555;
+        }
+
+        .score-high {
+            color: green;
+            font-weight: bold;
+        }
+
+        .score-med {
+            color: orange;
+        }
+
+        .score-low {
+            color: red;
+        }
+
+        /* Hide annotations when class is present on body */
+        body.hide-annotations .annotation-panel {
+            display: none !important;
+        }
+
+        #metrics h4,
+        #protein-info h4,
+        #go-panel h4,
+        #string-panel h4 {
+            margin: 0 0 5px 0;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 5px;
+            font-size: 1.2em;
+        }
+
+        #protein-info p {
+            margin: 5px 0;
+        }
+
+        .label {
+            font-weight: bold;
+            color: #555;
+        }
+
+        #settings-panel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            /* Left of the copy link/metrics area if crowded, or just right corner */
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            font-size: 0.9em;
+            width: 200px;
+        }
+
+        #settings-panel h4 {
+            margin: 0 0 5px 0;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 3px;
+        }
+
+        #settings-panel label {
+            display: block;
+            margin-bottom: 3px;
+            cursor: pointer;
+        }
+
+        #hover-tooltip {
+            position: absolute;
+            bottom: 10px;
+            right: 20px;
+            /* Bottom Right */
+            left: auto;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            pointer-events: none;
+            /* Let clicks pass through */
+            display: none;
+            max-width: 250px;
+        }
+
+        /* Custom Interaction Dropdown Styles */
+        #targetSelect {
+            padding: 5px 10px;
+            cursor: pointer;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+            min-width: 200px;
+            margin-right: 15px;
+        }
+
+        #interaction-container {
+            position: relative;
+            display: inline-block;
+            margin-right: 15px;
+        }
+
+        #interaction-btn {
+            padding: 5px 10px;
+            cursor: pointer;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 3px;
+            min-width: 200px;
+            text-align: left;
+        }
+
+        #return-monomer-btn {
+            display: none;
+            position: absolute;
+            right: -30px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #d9534f;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            line-height: 20px;
+            text-align: center;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+            z-index: 30;
+        }
+
+        #return-monomer-btn:hover {
+            background: #c9302c;
+        }
+
+        #interaction-btn:disabled {
+            color: #888;
+            cursor: not-allowed;
+        }
+
+        #interaction-dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: #222;
+            border: 1px solid #444;
+            z-index: 100;
+            min-width: 320px;
+            color: #eee;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            border-radius: 0 0 4px 4px;
+        }
+
+        .dropdown-controls {
+            padding: 10px;
+            border-bottom: 1px solid #444;
+            background: #2a2a2a;
+        }
+
+        .dropdown-controls div {
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+        }
+
+        .dropdown-controls label {
+            width: 80px;
+            font-size: 0.9em;
+            color: #ccc;
+        }
+
+        .dropdown-controls select,
+        .dropdown-controls input {
+            flex-grow: 1;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 3px;
+        }
+
+        #interaction-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .dropdown-item {
+            padding: 8px 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+            font-size: 0.9em;
+        }
+
+        .dropdown-item:hover {
+            background: #444;
+        }
+
+        .dropdown-item.active {
+            background: #3a4a5a;
+            border-left: 3px solid #00FFFF;
+        }
+
+        #interaction-panel {
+            position: absolute;
+            top: 60px;
+            left: 5px;
+            bottom: 250px;
+            width: 280px;
+            background: rgba(255, 255, 255, 0.825);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            z-index: 20;
+            display: none;
+            overflow: scroll;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #interaction-panel h4 {
+            margin: 0 0 5px 0;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        #ip-controls {
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 5px;
+        }
+
+        #ip-controls input[type="text"] {
+            width: 95%;
+            padding: 4px;
+            margin-bottom: 5px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+
+        #ip-list {
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        .ip-item {
+            display: flex;
+            align-items: center;
+            padding: 3px 0;
+            border-bottom: 1px solid #f9f9f9;
+        }
+
+        .ip-item:hover {
+            background-color: #f0f0f0;
+        }
+
+        .ip-item label {
+            margin-left: 5px;
+            cursor: pointer;
+            font-size: 0.85em;
+            word-break: break-word;
+            flex-grow: 1;
+        }
+
+        .ip-item input {
+            cursor: pointer;
+        }
+
+        /* Loading overlay for panel */
+        .panel-loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        #sites-panel {
+            position: absolute;
+            top: 60px;
+            right: 10px;
+            bottom: 150px;
+            /* Leave space for settings panel */
+            width: 300px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
+            z-index: 25;
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            font-size: 0.9em;
+        }
+
+        #sites-panel h4 {
+            margin: 0 0 10px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #eee;
+            color: #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #sites-partner-list {
+            /* Remove individual scroll, will use container scroll */
+            margin-bottom: 15px;
+        }
+
+        #sites-partner-list::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #sites-partner-list::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+
+        #sites-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+
+        #sites-content::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #sites-content::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+
+        .res-group-block {
+            margin-bottom: 12px;
+            padding: 8px;
+            background: #fdfdfd;
+            border-radius: 6px;
+            border: 1px solid #eee;
+            border-left: 4px solid #888;
+            transition: all 0.2s;
+        }
+
+        .res-group-header {
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+        }
+
+        .res-group-header:hover {
+            background: #f0f7ff;
+        }
+
+        .res-group-partners {
+            margin-top: 5px;
+        }
+
+        .partner-interaction-row {
+            margin-bottom: 6px;
+            padding: 6px;
+            background: #fff;
+            border: 1px solid #f0f0f0;
+            border-radius: 4px;
+        }
+
+        .partner-name-line {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-bottom: 2px;
+            color: #333;
+        }
+
+        .partner-metrics-line {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75em;
+            color: #777;
+            flex-wrap: wrap;
+        }
+
+
+        .site-residues {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .site-res-chip {
+            padding: 2px 6px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            font-size: 0.75em;
+            cursor: pointer;
+        }
+
+        .site-res-chip:hover {
+            border-color: #007bff;
+            background: #e7f1ff;
+        }
+
+        .hotspot-summary {
+            margin-top: 10px;
+            padding: 10px;
+            background: #fff3f3;
+            border: 1px solid #ffc1c1;
+            border-radius: 4px;
+        }
+
+        .hotspot-summary h5 {
+            margin: 0 0 5px 0;
+            color: #d9534f;
+        }
+
+        .metric-pill {
+            background: #f5f5f5;
+            padding: 1px 6px;
+            border-radius: 4px;
+            border: 1px solid #e0e0e0;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <a href="/"
+            style="text-decoration: none; color: white; font-weight: bold; margin-right: 20px; font-size: 1.2em;">1-v-Proteome</a>
+
+        <label for="targetSelect">Target:&nbsp;</label>
+
+        <select id="targetSelect">
+            <option value="" disabled selected>Loading...</option>
+        </select>
+
+        <div id="interaction-container">
+            <button id="interaction-btn" disabled>Select Target First ▾</button>
+            <button id="return-monomer-btn" title="Return to Monomer Mode">&times;</button>
+            <div id="interaction-dropdown">
+                <div class="dropdown-controls">
+                    <div>
+                        <label for="sortSelect">Sort:</label>
+                        <select id="sortSelect">
+                            <option value="name">Name (A-Z)</option>
+                            <option value="date">Date (Newest)</option>
+                            <option value="confidence">Confidence (High-Low)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="dateFilter">Filter After:</label>
+                        <input type="date" id="dateFilter">
+                    </div>
+                </div>
+                <div id="interaction-list">
+                    <!-- Items injected here -->
+                </div>
+            </div>
+        </div>
+
+
+        <span id="current-file-date"
+            style="color: #ddd; font-size: 0.9em; margin-right: 15px; margin-left: 45px;"></span>
+
+        <a href="https://github.com/samuelmf1/1-v-proteome/tree/boltz" target="_blank"
+            style="margin-left: auto; margin-right: 15px; color: white; display: flex; align-items: center;">
+            <svg height="24" width="24" viewBox="0 0 16 16" version="1.1" style="fill: currentColor;">
+                <path fill-rule="evenodd"
+                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z">
+                </path>
+            </svg>
+        </a>
+
+        <button id="copy-link-btn"
+            style="margin-right: 30px; padding: 5px 10px; font-size: 14px; cursor: pointer; background: #fff; border: 1px solid #ccc; border-radius: 3px; display: none;">Copy
+            Link</button>
+    </div>
+
+    <div id="loading">Select PPI in menu above.</div>
+
+    <div id="metrics" class="annotation-panel" style="display:none;">
+        <h4>Boltz-2 Metrics</h4>
+        <div id="metrics-content">
+            <!-- Metrics will be injected here -->
+        </div>
+    </div>
+
+    <div id="protein-info" class="annotation-panel" style="display:none;">
+        <h4>Interacting Protein Info (Chain B)</h4>
+        <p><span class="label">Name:</span> <span id="pi-name"></span></p>
+        <p><span class="label">ID:</span> <span id="pi-id"></span></p>
+        <p><span class="label">Size:</span> <span id="pi-size"></span> aa</p>
+        <p><span class="label">Annotation:</span> <span id="pi-annotation"></span></p>
+    </div>
+
+    <div id="go-panel" class="annotation-panel">
+        <h4>Gene Ontology (Chain B)</h4>
+        <div id="go-content">
+            <!-- GO Terms will be injected here -->
+        </div>
+    </div>
+
+    <div id="string-panel" class="annotation-panel">
+        <h4>STRING Links</h4>
+        <div id="string-content">
+            <!-- STRING Interactions will be injected here -->
+        </div>
+    </div>
+
+    <div id="interaction-panel">
+        <h4 style="display: flex; justify-content: space-between; align-items: center;">
+            Interacting Proteins
+            <span style="font-size:0.5em; color:#aaa;">v2.1</span>
+        </h4>
+        <div id="ip-controls">
+            <input type="text" id="ip-search" placeholder="Filter by Name, ID, or Annotation...">
+            <label style="font-size:0.85em; display:block; margin-top:5px;">
+                Min Confidence: <span id="ip-conf-val">0.60</span>
+                <input type="range" id="ip-conf-slider" min="0" max="1" step="0.05" value="0.6" style="width:100%">
+            </label>
+            <div style="margin-top: 5px; display: flex; gap: 5px;">
+                <button id="btn-ip-select-all" style="flex:1; cursor:pointer; font-size: 0.9em;">Select All</button>
+                <button id="btn-ip-deselect-all" style="flex:1; cursor:pointer; font-size: 0.9em;">Deselect All</button>
+            </div>
+            <div id="ip-suggested-terms" style="margin-top: 10px; border-top: 1px solid #444; padding-top: 5px;">
+                <div style="font-size: 0.8em; color: #aaa; margin-bottom: 5px;">Suggested Terms:</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 4px;" id="suggested-terms-container">
+                    <!-- Buttons like Nucleus, Cytoplasm etc -->
+                </div>
+            </div>
+        </div>
+        <div id="ip-list">
+            <!-- Checkboxes injected here -->
+        </div>
+    </div>
+
+    <div id="sites-panel">
+        <h4>
+            Interaction Sites
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button id="clear-focus-btn"
+                    style="display:none; font-size: 0.7em; padding: 2px 6px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; background: #fff;">Clear
+                    Focus</button>
+            </div>
+        </h4>
+        <div id="focus-range-control"
+            style="padding: 10px; border-bottom: 1px solid #eee; margin-bottom: 10px; display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <label style="font-size: 0.8em; color: #666;">Focus Window: <span id="focus-range-val">12</span>
+                    aa</label>
+            </div>
+            <input type="range" id="focus-range-slider" min="1" max="50" value="12"
+                style="width: 100%; cursor: pointer;">
+        </div>
+        <div id="domain-group-control" style="padding: 10px; border-bottom: 1px solid #eee; margin-bottom: 10px;">
+            <label style="display: flex; align-items: center; cursor: pointer; font-size: 0.85em; color: #444;">
+                <input type="checkbox" id="chk-group-domains" style="margin-right: 8px;">
+                Group residues into domains
+            </label>
+            <div id="domain-cluster-control" style="margin-top: 10px; display: none;">
+                <label style="font-size: 0.8em; color: #666; display: flex; justify-content: space-between;">
+                    Cluster Distance: <span id="domain-cluster-val">10</span> aa
+                </label>
+                <input type="range" id="domain-cluster-slider" min="5" max="100" value="10"
+                    style="width: 100%; cursor: pointer; margin-top: 5px;">
+            </div>
+        </div>
+        <div id="sites-content">
+            <div id="sites-summary" style="margin-bottom:10px; color:#666; font-style:italic;">
+                Select interactors on the left to view interaction sites.
+            </div>
+            <div id="hotspot-section"
+                style="display:none; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                <div class="hotspot-summary">
+                    <h5>Monomer Hotspots</h5>
+                    <div id="hotspot-list" class="site-residues"></div>
+                </div>
+            </div>
+            <div id="domain-hotspot-section"
+                style="display:none; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                <div class="hotspot-summary" style="background: #fff8eb; border-color: #ffe8cc;">
+                    <h5 style="color: #856404;">Domain Hotspots</h5>
+                    <div id="domain-hotspot-list" class="site-residues"></div>
+                </div>
+            </div>
+            <div id="partner-interactions-section"
+                style="display:none; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                <div class="hotspot-summary" style="background: #f0f7ff; border-color: #bee5ff;">
+                    <h5 style="color: #004085;">Partner Highlights</h5>
+                    <div id="partner-highlight-list" class="site-residues"></div>
+                </div>
+            </div>
+            <div id="sites-partner-list"></div>
+        </div>
+    </div>
+
+    <div id="settings-panel">
+        <h4>Visualization Settings</h4>
+        <div id="interaction-settings">
+            <label>
+                <input type="checkbox" id="chk-distances" checked> Show Distances
+            </label>
+            <label>
+                <input type="checkbox" id="chk-nterm-label" checked> Show N-term label
+            </label>
+            <label>
+                <input type="checkbox" id="chk-ppi-only"> Show PPI Only
+            </label>
+            <label>
+                <input type="checkbox" id="chk-ball-stick"> Show Ball & Stick
+            </label>
+        </div>
+
+        <div id="disorder-settings" style="margin-top: 10px; border-top: 1px solid #ccc; padding-top: 5px;">
+            <div style="font-size: 0.9em; font-weight: bold; margin-bottom: 5px;">Target Color Range:</div>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;">
+                <label style="margin:0; font-size: 0.85em;">Low Disorder:</label>
+                <input type="color" id="disorder-color-low" value="#323232" style="cursor: pointer;">
+            </div>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <label style="margin:0; font-size: 0.85em;">High Disorder:</label>
+                <input type="color" id="disorder-color-high" value="#FF0000" style="cursor: pointer;">
+            </div>
+        </div>
+    </div>
+
+    <div id="sequence-viewer">
+        <!-- Sequences will be injected here -->
+        <div id="seq-ruler" class="seq-row"></div>
+        <div id="seq-chain-A" class="seq-row"></div>
+        <div id="seq-chain-B" class="seq-row"></div>
+    </div>
+
+    <div id="container">
+        <!-- <div id="screenshot-btn" title="Download High-Res Image"
+            style="position: absolute; top: 10px; left: 10px; cursor: pointer; z-index: 20; background: rgba(255,255,255,0.8); padding: 3px; border-radius: 4px; display: none;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+        </div> -->
+        <div id="hover-tooltip"></div>
+    </div>
+    <div id="viz-border"></div>
+    <strong><span id="chainA-label">Chain A</span> (chain A):</strong> Dark Gray Cartoon<br>
+    <strong><span id="chainB-label">Chain B</span> (chain B):</strong> Bright Cyan Cartoon<br>
+    </div>
+
+    <div id="disorder-legend"
+        style="display: none; position: absolute; bottom: 80px; left: 350px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; color: white; text-align: center; z-index: 20;">
+        <div style="font-size: 0.9em; margin-bottom: 3px;"><a style="font-size: 1em; margin-bottom: 3px; color:white;"
+                href="https://www.science.org/doi/10.1126/science.adq8381">Disorder Score</a></div>
+        <div style="display: flex; align-items: center; bottom: 50px; width: 200px;">
+            <div style="margin-right: 5px; font-size: 0.8em;">0.0 (Low)</div>
+            <div
+                style="flex-grow: 1; height: 15px; background: linear-gradient(to right, rgb(50,50,50), rgb(220,220,220)); border: 1px solid #555;">
+            </div>
+            <div style="margin-left: 5px; font-size: 0.8em;">1.0 (High)</div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            let element = $('#container');
+            let config = { backgroundColor: 'white' };
+            let viewer = $3Dmol.createViewer(element, config);
+
+            // Add camera change listener (mouseup is a good proxy for end of interaction)
+            element.on('mouseup touchend', function () {
+                setTimeout(updateURL, 100); // Slight delay to let viewer settle
+            });
+            // Also zoom
+            element.on('wheel', function () {
+                setTimeout(updateURL, 500); // Debounce zoom
+            });
+
+
+
+            // Function to parse CSV
+            function parseCSV(text) {
+                let lines = text.trim().split('\n');
+                let headers = lines[0].split(',');
+                let data = [];
+                for (let i = 1; i < lines.length; i++) {
+                    let obj = {};
+                    let currentline = lines[i].split(',');
+                    if (currentline.length < headers.length) continue;
+                    for (let j = 0; j < headers.length; j++) {
+                        obj[headers[j].trim()] = currentline[j].trim();
+                    }
+                    data.push(obj);
+                }
+                return data;
+            }
+            // State for rendering
+            let currentCifData = null;
+            let currentInteractions = []; // Stores the interactions from the CSV
+            let focusedResidue = null;    // Focus on specific resId e.g. "406"
+            let currentFocusRange = 12;   // Slider-controlled focus window
+            let groupDomains = false;    // Toggle state for domain grouping
+            let domainClusterDistance = 10; // Max aa distance for clustering
+            let focusedDomain = null;     // { min, max, name }
+            let monomerModel = null;      // Store the main monomer model
+            let selectedResidues = new Set(); // Stores "Chain_ResID" e.g. "A_10"
+            let residueDistMap = {}; // Global map for residue styles
+            let allFiles = []; // Store raw file list
+            let filesMap = {};
+            let groupedData = {};
+            let monomerMode = false;
+            let superimposedModels = {}; // map fileId -> GLModel
+            let selectedPPIsData = {}; // map fileId -> { name, color, interactions: [], metrics: {} }
+            let currentMonomerTarget = null;
+            let currentDisorderData = null; // Store fetched disorder data globally for access in hover
+            let isRestoring = false; // Flag to suppress URL updates during restoration
+
+            const threeToOne = {
+                'ALA': 'A', 'ARG': 'R', 'ASN': 'N', 'ASP': 'D', 'CYS': 'C',
+                'GLU': 'E', 'GLN': 'Q', 'GLY': 'G', 'HIS': 'H', 'ILE': 'I',
+                'LEU': 'L', 'LYS': 'K', 'MET': 'M', 'PHE': 'F', 'PRO': 'P',
+                'SER': 'S', 'THR': 'T', 'TRP': 'W', 'TYR': 'Y', 'VAL': 'V',
+                'SEC': 'U', 'PYL': 'O'
+            };
+
+            const threeToFull = {
+                'ALA': 'Alanine', 'ARG': 'Arginine', 'ASN': 'Asparagine', 'ASP': 'Aspartic Acid', 'CYS': 'Cysteine',
+                'GLU': 'Glutamic Acid', 'GLN': 'Glutamine', 'GLY': 'Glycine', 'HIS': 'Histidine', 'ILE': 'Isoleucine',
+                'LEU': 'Leucine', 'LYS': 'Lysine', 'MET': 'Methionine', 'PHE': 'Phenylalanine', 'PRO': 'Proline',
+                'SER': 'Serine', 'THR': 'Threonine', 'TRP': 'Tryptophan', 'TYR': 'Tyrosine', 'VAL': 'Valine',
+                'SEC': 'Selenocysteine', 'PYL': 'Pyrrolysine'
+            };
+
+            // Helper to determine style for a single residue
+            function getResidueStyle(chain, resi) {
+                let showBallAndStick = $('#chk-ball-stick').is(':checked');
+                let key = chain + "_" + resi;
+                let color = (chain === 'A') ? '#444444' : '#00FFFF'; // Base colors
+
+                // Interaction overrides
+                if (key in residueDistMap) {
+                    let dist = residueDistMap[key];
+                    if (dist < 3.0) color = '#8B0000';      // Dark Red
+                    else if (dist < 4.0) color = '#FF0000'; // Medium Red
+                    else color = '#FF6347';                 // Light Red
+                }
+
+                // Selection overrides (highest priority)
+                if (selectedResidues.has(key)) {
+                    color = '#00FF00'; // Bright Green
+                }
+
+                let styleObj = { cartoon: { color: color } };
+
+                // Add shapes if selected or ball-and-stick enabled for interaction
+                if (selectedResidues.has(key)) {
+                    styleObj.stick = { color: '#00FF00', radius: 0.25 };
+                    styleObj.sphere = { color: '#00FF00', scale: 0.4 };
+                } else if (key in residueDistMap && showBallAndStick) {
+                    styleObj.stick = { colorscheme: 'whiteCarbon', radius: 0.2, color: color };
+                    styleObj.sphere = { scale: 0.3, color: color };
+                }
+
+                return styleObj;
+            }
+
+            // Function to adjust layout of panels
+            function adjustLayout() {
+                let pi = $('#protein-info');
+                let sp = $('#string-panel');
+                let go = $('#go-panel');
+
+                // Determine bottom of upper panels
+                let val1 = pi.is(':visible') ? (pi.offset().top + pi.outerHeight()) : 140;
+                let val2 = sp.is(':visible') ? (sp.offset().top + sp.outerHeight()) : 140;
+
+                let maxBottom = Math.max(val1, val2);
+
+                // Set GO panel top
+                go.css('top', (maxBottom + 15) + 'px');
+            }
+
+            // Function to load a specific file ID
+            function loadVisualization(fileId) {
+                if (!fileId) return;
+
+                monomerMode = false; // Ensure we exit Monomer Mode
+                focusedResidue = null;
+                focusedDomain = null;
+                $('#return-monomer-btn').show();
+                // currentDisorderData = null; // Do NOT clear here, we will fetch/update it
+                // $('#disorder-legend').hide(); // Hide initially, show if data found
+                $('#sites-panel').hide();
+                $('#interaction-panel').hide();
+                $('#loading').text('Loading ' + fileId + '...').show();
+                $('#viz-border').css('border-color', 'black');
+
+                // Revert Layout for Interaction Mode
+                $('#container').css('left', '500px').css('top', '140px').css('bottom', '10px');
+                $('#viz-border').css('left', '500px').css('top', '140px').css('bottom', '10px');
+
+                $('#sequence-viewer').show();
+                $('.legend').show();
+                $('#settings-panel').show();
+                $('#interaction-settings').show(); // Show interaction settings
+                // Interaction Mode: Top-Left (inside container, so right of panel)
+                // $('#screenshot-btn').css({ 'left': '10px', 'right': 'auto' }).show();
+                $('#disorder-settings').css({ 'border-top': '1px solid #ccc', 'margin-top': '10px', 'padding-top': '5px' }); // Restore separator
+                // Don't clear viewer yet, wait for data
+
+                // Update UI Text
+                let fileInfo = filesMap[fileId];
+
+                // Fallback: If not in filesMap (e.g. filtered out), check allFiles
+                if (!fileInfo && allFiles) {
+                    fileInfo = allFiles.find(f => f.id === fileId);
+                }
+
+                // Fallback: If still missing, create synthetic object
+                if (!fileInfo) {
+                    console.warn("File info not found for", fileId, "creating synthetic object.");
+                    let parts = fileId.split('__');
+                    let chainA = parts[0] || "Unknown";
+                    let chainB = parts.length > 1 ? parts[1].split('.')[1] || parts[1] : "Unknown"; // Try to extract ID
+                    fileInfo = {
+                        id: fileId,
+                        chainA: chainA,
+                        chainB: chainB,
+                        proteinInfo: null
+                    };
+                }
+
+                if (fileInfo) {
+                    $('#chainA-label').text(fileInfo.chainA);
+                    $('#chainB-label').text(fileInfo.chainB);
+
+                    // Fetch Disorder Data for Chain A
+                    $.ajax({
+                        url: '/api/disorder/' + encodeURIComponent(fileInfo.chainA),
+                        dataType: 'json',
+                        success: function (disorderData) {
+                            currentDisorderData = disorderData;
+                            // Update Legend Text
+                            // Find the text node for Chain A description? 
+                            // Easier to just rebuild standard legend or assume user knows?
+                            // Let's rely on the disorder tooltip for clarity, 
+                            // but maybe adding the disorder legend would be good?
+                            // User asked for "shading", didn't explicitly ask for legend in interaction mode.
+                            // For now, just enable the shading.
+                            renderScene();
+                        },
+                        error: function () {
+                            currentDisorderData = null;
+                            renderScene();
+                        }
+                    });
+
+                    // Show Date
+                    if (fileInfo.mtime && !monomerMode) {
+                        let d = new Date(fileInfo.mtime * 1000);
+                        $('#current-file-date').text("PPI Generated: " + d.toLocaleDateString() + " " + d.toLocaleTimeString()).show();
+                    } else {
+                        $('#current-file-date').text("").hide();
+                    }
+
+
+                    // Sync Dropdown Text (for refreshes/direct links)
+                    if (fileInfo.chainB && !monomerMode) {
+                        let label = fileInfo.chainB + (fileInfo.confidence ? ` (${fileInfo.confidence.toFixed(2)})` : "");
+                        $('#interaction-btn').text(label);
+                    }
+
+                    // Update Protein Details Panel
+                    console.log("Loading Protein Info for:", fileId, fileInfo.proteinInfo);
+                    if (!monomerMode) {
+                        // Ensure we have protein info for Interaction Mode
+                        if (!fileInfo.proteinInfo) {
+                            let parts = fileId.split('__');
+                            let partnerName = fileInfo.chainB || (parts.length > 1 ? parts[0] : "Unknown"); // Fallback name
+                            let partnerId = (parts.length > 1) ? parts[1] : "N/A";
+
+                            console.log("Generating fallback info for:", fileId, partnerName, partnerId);
+
+                            fileInfo.proteinInfo = {
+                                name: partnerName,
+                                id: partnerId,
+                                size: 'N/A',
+                                annotation: 'Interaction Partner'
+                            };
+                        }
+                    }
+
+                    if (fileInfo.proteinInfo) {
+                        let info = fileInfo.proteinInfo;
+                        if (info && info.name) {
+                            $('#pi-name').text(info.name);
+                            $('#pi-id').text(info.id);
+                            $('#pi-size').text(info.size);
+                            $('#pi-annotation').text(info.annotation);
+                            $('#protein-info').show();
+
+                            // Adjust layout after protein info is shown
+                            adjustLayout();
+
+                            // Fetch GO Data
+                            fetchGOData(info.name);
+
+                            // Fetch STRING Data
+                            fetchStringData(info.id);
+
+                            // Fetch detailed Boltz-2 Metrics
+                            fetchMetricsData(fileId);
+                        } else {
+                            $('#protein-info').hide();
+                            $('#go-panel').hide();
+                            $('#string-panel').hide();
+                            adjustLayout();
+                        }
+                    } else {
+                        $('#protein-info').hide();
+                        $('#go-panel').hide();
+                        $('#string-panel').hide();
+                        adjustLayout();
+                    }
+                }
+
+                function fetchGOData(symbol) {
+                    $('#go-content').html('Loading...');
+                    $('#go-panel').show();
+                    adjustLayout();
+
+                    // Construct URL with encoded symbol
+                    let url = "/api/go/" + encodeURIComponent(symbol);
+
+                    $.ajax({
+                        url: url,
+                        type: 'GET',
+                        dataType: 'json',
+                        success: function (data) {
+                            if (!data || data.length === 0) {
+                                $('#go-content').html('<em>No GO terms found.</em>');
+                                return;
+                            }
+
+                            // Group by Aspect
+                            let titleMap = {
+                                'C': 'Cellular Component',
+                                'F': 'Molecular Function',
+                                'P': 'Biological Process'
+                            };
+
+                            // Desired Order: Component first
+                            let aspectOrder = ['C', 'F', 'P'];
+
+                            let html = '';
+
+                            aspectOrder.forEach(function (aspect) {
+                                let terms = data.filter(item => item.aspect === aspect);
+                                if (terms.length > 0) {
+                                    html += '<h5>' + titleMap[aspect] + '</h5>';
+                                    html += '<ul>';
+                                    terms.forEach(function (term) {
+                                        html += '<li>';
+                                        html += '<strong>' + term.name + '</strong> (' + term.id + ')<br>';
+                                        html += '<small>' + term.definition + '</small>';
+                                        html += '</li>';
+                                    });
+                                    html += '</ul>';
+                                }
+                            });
+
+                            $('#go-content').html(html);
+                        },
+                        error: function () {
+                            $('#go-content').html('<em>Error fetching GO data.</em>');
+                        }
+                    });
+                }
+
+                function fetchStringData(proteinId) {
+                    $('#string-content').html('Loading...');
+                    $('#string-panel').show();
+                    adjustLayout();
+
+                    let url = "/api/string/" + encodeURIComponent(proteinId);
+
+                    $.ajax({
+                        url: url,
+                        type: 'GET',
+                        dataType: 'json',
+                        success: function (data) {
+                            if (!data || data.length === 0) {
+                                $('#string-content').html('<em>No physical links.</em>');
+                                adjustLayout(); // Re-adjust if height changed
+                                return;
+                            }
+
+                            let html = '<table>';
+                            html += '<thead><tr><th>Partner</th><th>Score</th></tr></thead>';
+                            html += '<tbody>';
+
+                            data.forEach(function (item) {
+                                let scoreClass = 'score-low';
+                                if (item.score >= 700) scoreClass = 'score-high';
+                                else if (item.score >= 400) scoreClass = 'score-med';
+
+                                html += '<tr>';
+                                html += '<td>' + item.partner_name + '</td>';
+                                html += '<td class="' + scoreClass + '">' + item.score + '</td>';
+                                html += '</tr>';
+                            });
+
+                            html += '</tbody></table>';
+                            $('#string-content').html(html);
+                            adjustLayout(); // Re-adjust as content loaded
+                        },
+                        error: function () {
+                            $('#string-content').html('<em>Error fetching STRING data.</em>');
+                            adjustLayout();
+                        }
+                    });
+                }
+
+                function fetchMetricsData(fileId) {
+                    $('#metrics-content').html('Loading...');
+                    $('#metrics').show();
+
+                    let url = "/api/metrics/" + encodeURIComponent(fileId);
+
+                    $.ajax({
+                        url: url,
+                        type: 'GET',
+                        dataType: 'json',
+                        success: function (data) {
+                            if (!data) {
+                                $('#metrics-content').html('<em>Error parsing metrics.</em>');
+                                return;
+                            }
+
+                            // Build a nice display
+                            let html = '<div style="text-align: left;">';
+
+                            // Highlight Confidence Score prominently
+                            let conf = data.confidence_score;
+                            let color = 'gray';
+                            if (conf > 0.8) color = 'green';
+                            else if (conf > 0.6) color = 'orange';
+                            else color = 'red';
+
+                            html += `<div style="background: ${color}; color: white; padding: 5px; border-radius: 3px; font-weight: bold; text-align: center; margin-bottom: 10px;">`;
+                            html += `Confidence: ${conf.toFixed(3)}`;
+                            html += `</div>`;
+
+                            // List other metrics
+                            let fields = [
+                                { key: 'ptm', label: 'pTM' },
+                                { key: 'iptm', label: 'ipTM' },
+                                { key: 'protein_iptm', label: 'Protein ipTM' },
+                                { key: 'complex_plddt', label: 'Complex pLDDT' },
+                                { key: 'complex_iplddt', label: 'Complex ipLDDT' },
+                                { key: 'complex_pde', label: 'Complex PDE' },
+                                { key: 'complex_ipde', label: 'Complex iPDE' }
+                            ];
+
+                            fields.forEach(f => {
+                                if (data[f.key] !== undefined) {
+                                    let val = data[f.key];
+                                    if (typeof val === 'number') val = val.toFixed(3);
+                                    html += `<p style="margin: 3px 0; font-size: 0.85em;"><strong>${f.label}:</strong> ${val}</p>`;
+                                }
+                            });
+
+                            // Add per-chain PTMs if available
+                            if (data.chains_ptm) {
+                                html += '<div style="margin-top: 8px; padding-top: 5px; border-top: 1px solid #eee;"><strong>Chain pTMs:</strong>';
+                                for (let chain in data.chains_ptm) {
+                                    html += `<br><small>Chain ${chain}: ${data.chains_ptm[chain].toFixed(3)}</small>`;
+                                }
+                                html += '</div>';
+                            }
+
+                            html += '</div>';
+                            $('#metrics-content').html(html);
+                        },
+                        error: function () {
+                            $('#metrics-content').html('<em>Detailed metrics not found.</em>');
+                        }
+                    });
+                }// Update URL
+                if (fileInfo) {
+                    let params = new URLSearchParams();
+                    params.set('target', fileInfo.chainA);
+                    params.set('interaction', fileInfo.id);
+
+                    // Preserve view if present (e.g. initial load)
+                    let currentParams = new URLSearchParams(window.location.search);
+                    if (currentParams.has('view')) {
+                        params.set('view', currentParams.get('view'));
+                    }
+
+                    let newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?' + params.toString();
+                    window.history.pushState({ path: newUrl }, '', newUrl);
+                    $('#copy-link-btn').show();
+                }
+
+                let csvUri = '/data/csv/' + fileId;
+                let cifUri = '/data/cif/' + fileId;
+
+                // Load CSV first
+                $.ajax({
+                    url: csvUri,
+                    success: function (csvText) {
+                        currentInteractions = parseCSV(csvText);
+
+                        // Then load structure
+                        $.ajax({
+                            url: cifUri,
+                            success: function (cifData) {
+                                currentCifData = cifData;
+                                selectedResidues.clear(); // Clear selections on new load
+                                renderScene(); // Call render
+                                renderSequences(); // Render sequences
+
+                                // Only zoom to fit if we are NOT restoring a view
+                                // Only zoom to fit if we are NOT restoring a view
+                                if (!new URLSearchParams(window.location.search).has('view')) {
+                                    viewer.zoomTo(); // Zoom only on initial load
+                                    viewer.zoom(1.5); // Zoom in closer as requested
+                                } else {
+                                    console.log("Skipping interaction zoomTo because 'view' param exists.");
+                                    restoreAppState();
+                                }
+                                $('#loading').hide();
+                            },
+                            error: function (hdr, status, err) {
+                                $('#loading').html('<span style="color:red">Failed to load structure.<br>Error: ' + err + '</span>');
+                            },
+                        });
+                    },
+                    error: function (hdr, status, err) {
+                        $('#loading').html('<span style="color:red">Failed to load interactions CSV.<br>Error: ' + err + '</span>');
+                    }
+                });
+            }
+
+            function renderScene() {
+                if (!currentCifData) return;
+
+                viewer.removeAllModels();
+                viewer.removeAllLabels();
+                viewer.removeAllShapes();
+                viewer.addModel(currentCifData, "cif");
+
+                // Make atoms clickable
+                viewer.setClickable({}, true, function (atom) {
+                    let key = atom.chain + "_" + atom.resi;
+                    if (selectedResidues.has(key)) {
+                        selectedResidues.delete(key);
+                    } else {
+                        selectedResidues.add(key);
+                    }
+                    renderScene();
+                    renderSequences();
+                });
+
+                applyHoverListeners();
+
+                let showBallAndStick = $('#chk-ball-stick').is(':checked');
+                let showDistances = $('#chk-distances').is(':checked');
+                let showPPIOnly = $('#chk-ppi-only').is(':checked');
+
+                // 1. Pre-process Interactions to determine best color for each residue
+                residueDistMap = {}; // Reset global map
+                currentInteractions.forEach(function (row) {
+                    let resA = parseInt(row.res_A);
+                    let resB = parseInt(row.res_B);
+                    let dist = parseFloat(row.dist);
+                    if (!isNaN(dist)) {
+                        if (!isNaN(resA)) {
+                            let keyA = row.chain_A + "_" + resA;
+                            if (!(keyA in residueDistMap) || dist < residueDistMap[keyA]) {
+                                residueDistMap[keyA] = dist;
+                            }
+                        }
+                        if (!isNaN(resB)) {
+                            let keyB = row.chain_B + "_" + resB;
+                            if (!(keyB in residueDistMap) || dist < residueDistMap[keyB]) {
+                                residueDistMap[keyB] = dist;
+                            }
+                        }
+                    }
+                });
+
+                // 2. Base Style: Cartoon by chain or Hidden
+                // 2. Base Style: Cartoon by chain or Hidden
+                if (showPPIOnly) {
+                    viewer.setStyle({}, { hidden: true }); // Clear all styles (hide everything)
+                    // We interact only with residues in residueDistMap later
+                } else {
+                    // Chain A Visualization
+                    let fRange = null;
+                    if (focusedResidue !== null) {
+                        fRange = getResidueRange(focusedResidue, currentFocusRange);
+                    } else if (focusedDomain !== null) {
+                        fRange = [];
+                        for (let i = focusedDomain.min; i <= focusedDomain.max; i++) fRange.push(i);
+                    }
+
+                    if (currentDisorderData) {
+                        // Use Disorder Coloring for Chain A
+                        let colorFunc = function (atom) {
+                            let val = currentDisorderData[atom.resi] || currentDisorderData[String(atom.resi)];
+                            if (val === undefined) return '#444444';
+                            let rgbLow = hexToRgb($('#disorder-color-low').val());
+                            let rgbHigh = hexToRgb($('#disorder-color-high').val());
+                            let r = Math.floor(rgbLow.r + (val * (rgbHigh.r - rgbLow.r)));
+                            let g = Math.floor(rgbLow.g + (val * (rgbHigh.g - rgbLow.g)));
+                            let b = Math.floor(rgbLow.b + (val * (rgbHigh.b - rgbLow.b)));
+                            return `rgb(${r},${g},${b})`;
+                        };
+
+                        if (fRange !== null) {
+                            viewer.setStyle({ chain: 'A' }, { cartoon: { color: '#ccc', opacity: 0.1 } });
+                            viewer.setStyle({ chain: 'A', resi: fRange }, { cartoon: { colorfunc: colorFunc } });
+                        } else {
+                            viewer.setStyle({ chain: 'A' }, { cartoon: { colorfunc: colorFunc } });
+                        }
+                    } else {
+                        if (fRange !== null) {
+                            viewer.setStyle({ chain: 'A' }, { cartoon: { color: '#ccc', opacity: 0.1 } });
+                            viewer.setStyle({ chain: 'A', resi: fRange }, { cartoon: { color: '#444444' } });
+                        } else {
+                            viewer.setStyle({ chain: 'A' }, { cartoon: { color: '#444444' } });
+                        }
+                    }
+
+                    if (fRange !== null) {
+                        viewer.setStyle({ chain: 'B' }, { cartoon: { color: '#ccc', opacity: 0.1 } });
+                        viewer.setStyle({ chain: 'C' }, { cartoon: { color: '#ccc', opacity: 0.1 } });
+                    } else {
+                        viewer.setStyle({ chain: 'B' }, { cartoon: { color: '#00FFFF' } });
+                        viewer.setStyle({ chain: 'C' }, { cartoon: { color: 'spectrum' } });
+                    }
+
+                    // Show Disorder Legend if data exists?
+                    if (currentDisorderData) {
+                        // Position bottom-left of viewer (Viewer starts at 500px)
+                        $('#disorder-legend').show().css({ 'bottom': '30px', 'left': '520px', 'transform': 'none' });
+                    }
+                }
+
+                // 3. Apply Interaction Styles and SELECTION Styles (Overriding base/hidden)
+                // Combine interaction residues with selected residues
+
+                // First, apply interactions
+                for (let key in residueDistMap) {
+                    let parts = key.split('_');
+                    let chain = parts[0];
+                    let resi = parseInt(parts[1]);
+                    let dist = residueDistMap[key];
+
+                    let color;
+                    if (chain === 'A') {
+                        // Chain A: Red Palette
+                        color = '#FF6347'; // Light Red (> 4.0)
+                        if (dist < 3.0) color = '#8B0000';      // Dark Red
+                        else if (dist < 4.0) color = '#FF0000'; // Medium Red
+
+                        // IF focused, hide this interaction site on monomer if it's OUTSIDE the focus range
+                        let fRange = null;
+                        if (focusedResidue !== null) {
+                            fRange = getResidueRange(focusedResidue, currentFocusRange);
+                        } else if (focusedDomain !== null) {
+                            fRange = [];
+                            for (let i = focusedDomain.min; i <= focusedDomain.max; i++) fRange.push(i);
+                        }
+
+                        if (fRange !== null && !fRange.includes(resi)) continue;
+                    } else {
+                        // Chain B/C:
+                        // IF focused, ghost if it doesn't contact ANY residue in the focus range
+                        let fRange = null;
+                        if (focusedResidue !== null) {
+                            fRange = getResidueRange(focusedResidue, currentFocusRange);
+                        } else if (focusedDomain !== null) {
+                            fRange = [];
+                            for (let i = focusedDomain.min; i <= focusedDomain.max; i++) fRange.push(i);
+                        }
+
+                        if (fRange !== null) {
+                            let minRes = Math.min(...fRange);
+                            let maxRes = Math.max(...fRange);
+
+                            // Find if this partner residue contacts our focus range
+                            let contactsFocus = currentInteractions.some(row => {
+                                let rA = parseInt(row.res_A);
+                                return rA >= minRes && rA <= maxRes && row.res_B == resi && row.chain_B == chain;
+                            });
+
+                            if (!contactsFocus) {
+                                let styleObj = { cartoon: { color: '#ccc', opacity: 0.1 }, hidden: false };
+                                viewer.setStyle({ chain: chain, resi: resi }, styleObj);
+                                continue;
+                            } else {
+                                // If it DOES contact, show a range around it as well
+                                let partnerRange = getResidueRange(resi, currentFocusRange);
+                                viewer.setStyle({ chain: chain, resi: partnerRange }, { cartoon: { color: color } });
+                                continue;
+                            }
+                        }
+
+                        // Chain B: Orange Palette
+                        color = '#FFA500'; // Light Orange
+                        if (dist < 3.0) color = '#FF4500';      // Orange-Red / Dark Orange
+                        else if (dist < 4.0) color = '#FF8C00'; // Dark Orange
+                    }
+
+                    let styleObj = { cartoon: { color: color }, hidden: false };
+
+                    if (showBallAndStick) {
+                        styleObj.stick = { colorscheme: 'whiteCarbon', radius: 0.2, color: color };
+                        styleObj.sphere = { scale: 0.3, color: color };
+                    }
+
+                    viewer.setStyle({ chain: chain, resi: resi }, styleObj);
+                }
+
+                // N-Terminus Labeling
+                if ($('#chk-nterm-label').is(':checked')) {
+                    ['A', 'B'].forEach(chainID => {
+                        let atoms = viewer.selectedAtoms({ chain: chainID });
+                        if (atoms.length > 0) {
+                            let minRes = atoms[0].resi;
+                            for (let i = 1; i < atoms.length; i++) {
+                                if (atoms[i].resi < minRes) minRes = atoms[i].resi;
+                            }
+
+                            let key = chainID + "_" + minRes;
+                            let cartoonColor;
+
+                            if (residueDistMap[key] !== undefined) {
+                                let dist = residueDistMap[key];
+                                if (chainID === 'A') {
+                                    cartoonColor = '#FF6347';
+                                    if (dist < 3.0) cartoonColor = '#8B0000';
+                                    else if (dist < 4.0) cartoonColor = '#FF0000';
+                                } else {
+                                    cartoonColor = '#FFA500';
+                                    if (dist < 3.0) cartoonColor = '#FF4500';
+                                    else if (dist < 4.0) cartoonColor = '#FF8C00';
+                                }
+                            } else {
+                                if (chainID === 'A') cartoonColor = '#444444';
+                                else cartoonColor = '#00FFFF';
+                            }
+
+                            let nTermColor = (chainID === 'A') ? '#EEEEEE' : '#E0FFFF'; // Brighter Gray / Pale Cyan
+
+                            let styleObj = {
+                                cartoon: { color: cartoonColor },
+                                sphere: { color: nTermColor, scale: 0.5 }
+                            };
+
+                            viewer.setStyle({ chain: chainID, resi: minRes }, styleObj);
+
+                            // Add Label
+                            let ca = viewer.selectedAtoms({ chain: chainID, resi: minRes, atom: 'CA' })[0];
+                            if (!ca && atoms.length > 0) ca = atoms.find(a => a.resi === minRes);
+
+                            if (ca) {
+                                viewer.addLabel("N-term", { position: ca, backgroundColor: 'rgba(0,0,0,0.7)', fontColor: nTermColor, fontSize: 10, yOffset: 1.0 });
+                            }
+                        }
+                    });
+                }
+
+                // Second, apply SELECTIONS (Green) - these override interactions
+                selectedResidues.forEach(key => {
+                    let parts = key.split('_');
+                    let chain = parts[0];
+                    let resi = parseInt(parts[1]);
+
+                    let styleObj = { cartoon: { color: '#00FF00' }, hidden: false }; // Bright Green
+
+                    // Always show ball & stick for selected, or just cartoon? User said "make protein highlight those residues in green"
+                    // Let's add stick/sphere to emphasize selection
+                    styleObj.stick = { color: '#00FF00', radius: 0.25 };
+                    styleObj.sphere = { color: '#00FF00', scale: 0.4 };
+
+                    viewer.setStyle({ chain: chain, resi: resi }, styleObj);
+                });
+
+                // 4. Draw distance lines and labels
+                if (showDistances) {
+                    currentInteractions.forEach(function (row) {
+                        let resA = parseInt(row.res_A);
+                        let resB = parseInt(row.res_B);
+                        let dist = parseFloat(row.dist);
+
+                        if (!isNaN(resA) && !isNaN(resB)) {
+                            // Get atoms
+                            let atomsA = viewer.selectedAtoms({ chain: row.chain_A, resi: resA, atom: 'CA' });
+                            let atomsB = viewer.selectedAtoms({ chain: row.chain_B, resi: resB, atom: 'CA' });
+
+                            if (atomsA.length === 0) atomsA = viewer.selectedAtoms({ chain: row.chain_A, resi: resA });
+                            if (atomsB.length === 0) atomsB = viewer.selectedAtoms({ chain: row.chain_B, resi: resB });
+
+                            if (atomsA.length > 0 && atomsB.length > 0) {
+                                let p1 = atomsA[0];
+                                let p2 = atomsB[0];
+
+                                // Use Bright Purple for distance lines
+                                let lineColor = '#BF00FF';
+
+                                viewer.addLine({
+                                    start: { x: p1.x, y: p1.y, z: p1.z },
+                                    end: { x: p2.x, y: p2.y, z: p2.z },
+                                    dashed: true,
+                                    color: lineColor,
+                                    lineWidth: 3
+                                });
+
+                                viewer.addLabel(dist.toFixed(1) + "Å", {
+                                    position: {
+                                        x: (p1.x + p2.x) / 2,
+                                        y: (p1.y + p2.y) / 2,
+                                        z: (p1.z + p2.z) / 2
+                                    },
+                                    backgroundColor: 'white',
+                                    backgroundOpacity: 1.0,
+                                    fontColor: 'black',
+                                    fontSize: 9
+                                });
+                            }
+                        }
+                    });
+                }
+
+                // Update Confidence Metrics
+                if (currentInteractions.length > 0) {
+                    let firstRow = currentInteractions[0];
+                    let iptm = parseFloat(firstRow.iptm);
+                    let ptm = parseFloat(firstRow.ptm);
+
+                    if (!isNaN(iptm) && !isNaN(ptm)) {
+                        let confidence = 0.8 * iptm + 0.2 * ptm;
+                        $('#iptm-val').text(iptm.toFixed(2));
+                        $('#ptm-val').text(ptm.toFixed(2));
+                        $('#conf-val').text(confidence.toFixed(2));
+
+                        // Color code
+                        let badge = $('#conf-badge');
+                        if (confidence >= 0.8) {
+                            badge.css('background-color', '#4CAF50'); // Green
+                        } else if (confidence >= 0.5) {
+                            badge.css('background-color', '#FF9800'); // Orange
+                        } else {
+                            badge.css('background-color', '#F44336'); // Red
+                        }
+                        $('#metrics').show();
+                    } else {
+                        $('#metrics').hide();
+                    }
+                }
+
+                viewer.render();
+            }
+
+            function renderSequences() {
+                // Clear existing
+                $('#seq-ruler').empty();
+                $('#seq-chain-A').empty();
+                $('#seq-chain-B').empty();
+
+                if (!currentCifData) return;
+
+                // Identify interaction residues for highlighting in sequence
+                // We basically need the set of residues that are in the CSV
+                let interactionSet = new Set();
+                currentInteractions.forEach(row => {
+                    if (row.res_A) interactionSet.add('A_' + row.res_A);
+                    if (row.res_B) interactionSet.add('B_' + row.res_B);
+                });
+
+                // Helper to get sequence data
+                let chainData = {};
+                let maxLen = 0;
+
+                ['A', 'B'].forEach(chainID => {
+                    let atoms = viewer.selectedAtoms({ chain: chainID });
+                    if (atoms.length > 0) {
+                        atoms.sort((a, b) => a.resi - b.resi);
+                        let unique = [];
+                        let seen = new Set();
+                        atoms.forEach(atom => {
+                            if (!seen.has(atom.resi)) {
+                                seen.add(atom.resi);
+                                unique.push({ resi: atom.resi, resn: atom.resn });
+                            }
+                        });
+                        chainData[chainID] = unique;
+                        if (unique.length > maxLen) maxLen = unique.length;
+                    } else {
+                        chainData[chainID] = [];
+                    }
+                });
+
+                // Render Ruler
+                let rulerContainer = $('#seq-ruler');
+                rulerContainer.append($('<div>').addClass('seq-label').text('Position')); // Spacer
+                let rulerWrapper = $('<div>').addClass('seq-residues');
+
+                for (let i = 1; i <= maxLen; i++) {
+                    let cell = $('<div>').addClass('ruler-cell');
+                    if (i === 1 || i % 10 === 0) {
+                        // Show number
+                        let num = $('<span>').addClass('ruler-num').text(i);
+                        cell.append(num);
+                    }
+                    rulerWrapper.append(cell);
+                }
+                rulerContainer.append(rulerWrapper);
+
+                // Render Chains
+                ['A', 'B'].forEach(chainID => {
+                    let container = $('#seq-chain-' + chainID);
+
+                    // Add Label
+                    let rawLabel = (chainID === 'A' ? $('#chainA-label').text() : $('#chainB-label').text()) || ('Chain ' + chainID);
+
+                    let label = $('<div>').addClass('seq-label')
+                        .text(rawLabel)
+                        .attr('title', rawLabel); // Tooltip for full name
+                    container.append(label);
+
+                    // Wrapper for residues
+                    let resWrapper = $('<div>').addClass('seq-residues');
+
+                    let residues = chainData[chainID];
+                    if (residues.length === 0) {
+                        resWrapper.append($('<span>').text('No sequence data'));
+                    } else {
+                        residues.forEach(r => {
+                            let resn1 = threeToOne[r.resn] || '?';
+                            let key = chainID + '_' + r.resi;
+
+                            let el = $('<span>').addClass('residue')
+                                .text(resn1)
+                                .attr('title', r.resn + ' ' + r.resi)
+                                .data('key', key);
+
+                            if (interactionSet.has(key)) {
+                                if (chainID === 'A') {
+                                    el.addClass('interaction-residue');
+                                } else {
+                                    el.addClass('interaction-residue-B');
+                                }
+                            }
+
+                            if (selectedResidues.has(key)) {
+                                el.addClass('selected-residue');
+                            }
+
+                            // Click Handler
+                            el.on('click', function () {
+                                let k = $(this).data('key');
+                                if (selectedResidues.has(k)) {
+                                    selectedResidues.delete(k);
+                                    $(this).removeClass('selected-residue');
+                                } else {
+                                    selectedResidues.add(k);
+                                    $(this).addClass('selected-residue');
+                                }
+                                renderScene(); // Update 3D view
+                            });
+
+                            resWrapper.append(el);
+                        });
+                    }
+                    container.append(resWrapper);
+                });
+            }
+
+            // Event Listeners for Settings
+            $('#chk-ball-stick, #chk-distances, #chk-ppi-only, #chk-nterm-label').on('change', function () {
+                renderScene();
+                updateURL();
+            });
+
+
+            // Initial Load: Fetch file list
+            $.ajax({
+                url: '/api/files',
+                success: function (files) {
+                    allFiles = files; // Store master list
+
+                    // Handle Deep Linking (URL Parameters)
+                    let urlParams = new URLSearchParams(window.location.search);
+                    let targetParam = urlParams.get('target');
+                    let interactionParam = urlParams.get('interaction');
+
+                    // Initial update
+                    updateFileLists(targetParam);
+
+                    // Event: Target Change
+                    $('#targetSelect').on('change', function () {
+                        let target = $(this).val();
+                        let filteredFiles = getFilteredSortedFiles();
+                        let interactions = filteredFiles.filter(f => (f.chainA || "Unknown") === target);
+
+                        populateInteractions(interactions);
+                    });
+
+                    // Event: Custom Loop Logic handled in populateInteractions and clicks
+
+                    // Toggle Dropdown
+                    $('#interaction-btn').on('click', function (e) {
+                        if (!$(this).prop('disabled')) {
+                            $('#interaction-dropdown').toggle();
+                            e.stopPropagation();
+                        }
+                    });
+
+                    // Close dropdown when clicking outside
+                    $(document).on('click', function (e) {
+                        if (!$(e.target).closest('#interaction-container').length) {
+                            $('#interaction-dropdown').hide();
+                        }
+                    });
+
+                    // Prevent clicks inside dropdown from closing it
+                    $('#interaction-dropdown').on('click', function (e) {
+                        // only if clicking item? No, controls shouldn't close it
+                        // Let manual item clicks handle closing
+                        e.stopPropagation();
+                    });
+
+                    // Event: Sorting/Filtering
+                    $('#sortSelect, #dateFilter').on('change', function () {
+                        updateFileLists();
+                    });
+
+                    // Global Site Panel Listeners
+                    $('#clear-focus-btn').off('click').on('click', function () {
+                        focusedResidue = null;
+                        focusedDomain = null;
+                        updateViewerStyles();
+                        updateURL();
+                    });
+
+                    $('#return-monomer-btn').off('click').on('click', function () {
+                        let target = $('#targetSelect').val();
+                        if (target) {
+                            let filteredFiles = getFilteredSortedFiles();
+                            let interactions = filteredFiles.filter(f => (f.chainA || "Unknown") === target);
+
+                            // Visual reset of dropdown
+                            $('.dropdown-item').removeClass('active');
+                            $('#interaction-btn').text('Select Interaction (' + interactions.length + ') ▾');
+
+                            enterMonomerMode(target, interactions);
+                        }
+                    });
+
+                    $(document).on('change', '#chk-group-domains', function () {
+                        groupDomains = $(this).is(':checked');
+                        if (groupDomains) {
+                            $('#domain-cluster-control').show();
+                        } else {
+                            $('#domain-cluster-control').hide();
+                        }
+                        updateSitesPanel();
+                        updateViewerStyles();
+                        updateURL();
+                    });
+
+                    $(document).on('input', '#domain-cluster-slider', function () {
+                        domainClusterDistance = parseInt($(this).val());
+                        $('#domain-cluster-val').text(domainClusterDistance);
+                        updateSitesPanel();
+                        updateURL(); // Update URL on slider change
+                    });
+
+                    $(document).on('input', '#focus-range-slider', function () {
+                        currentFocusRange = parseInt($(this).val());
+                        $('#focus-range-val').text(currentFocusRange);
+                        if (focusedResidue !== null || focusedDomain !== null) {
+                            updateViewerStyles();
+                        }
+                        updateURL(); // Update URL on focus range change
+                    });
+
+                    if (targetParam && interactionParam) {
+                        // Check if file exists in allFiles even if filtered out?
+                        // Ideally deep link should work even if filtered, but for now lets assume user filters what they want to see
+                        // Logic: Trigger selections
+                        // Need to ensure target is in select
+                        if ($('#targetSelect option[value="' + targetParam + '"]').length > 0) {
+                            $('#targetSelect').val(targetParam).trigger('change');
+                            // We need to wait or check logic. populateInteractions is sync.
+                            // Simulate selection
+                            loadVisualization(interactionParam);
+                            // Update button text? handled in loadVisualiztion helper or we need to find the obj
+                        }
+                    } else if (targetParam) {
+                        // Monomer Only - triggered by updateFileLists -> populateInteractions -> enterMonomerMode
+                    }
+
+                    // Copy Link Button Logic
+                    $('#copy-link-btn').on('click', function () {
+                        let url = window.location.href;
+                        navigator.clipboard.writeText(url).then(function () {
+                            let originalText = $('#copy-link-btn').text();
+                            $('#copy-link-btn').text('Copied!');
+                            setTimeout(() => {
+                                $('#copy-link-btn').text(originalText);
+                            }, 2000);
+                        }, function (err) {
+                            console.error('Could not copy text: ', err);
+                        });
+                    });
+                },
+                error: function (hdr, status, err) {
+                    $('#loading').html('<span style="color:red">Failed to load file list. Is server.py running?</span>');
+                }
+            });
+
+            function getFilteredSortedFiles() {
+                let sortMode = $('#sortSelect').val();
+                let dateFilterVal = $('#dateFilter').val();
+                let filterTime = dateFilterVal ? new Date(dateFilterVal).getTime() / 1000 : 0;
+
+                // Filter
+                let filtered = allFiles.filter(f => {
+                    if (filterTime > 0 && f.mtime) {
+                        return f.mtime >= filterTime;
+                    }
+                    return true;
+                });
+
+                // Sort
+                filtered.sort((a, b) => {
+                    if (sortMode === 'date') {
+                        return (b.mtime || 0) - (a.mtime || 0); // Newest first
+                    } else if (sortMode === 'confidence') {
+                        return (b.confidence || 0) - (a.confidence || 0); // Highest first
+                    } else {
+                        return a.name.localeCompare(b.name); // Name A-Z
+                    }
+                });
+
+                return filtered;
+            }
+
+            function updateFileLists(preferredTarget) {
+                let filteredFiles = getFilteredSortedFiles();
+
+                groupedData = {};
+                filesMap = {};
+
+                filteredFiles.forEach(function (f) {
+                    filesMap[f.id] = f;
+
+                    let target = f.chainA || "Unknown";
+                    if (!groupedData[target]) {
+                        groupedData[target] = [];
+                    }
+                    groupedData[target].push(f);
+                });
+
+                // Save current selection
+                let currentTarget = preferredTarget || $('#targetSelect').val();
+
+                let targetSelect = $('#targetSelect');
+                targetSelect.empty();
+                targetSelect.append('<option value="" disabled selected>Select Target...</option>');
+
+                Object.keys(groupedData).sort().forEach(function (target) {
+                    targetSelect.append($('<option>', {
+                        value: target,
+                        text: target
+                    }));
+                });
+
+                // Restore or reset
+                if (currentTarget && groupedData[currentTarget]) {
+                    targetSelect.val(currentTarget);
+                    // Update interactions too
+                    let interactions = groupedData[currentTarget];
+                    populateInteractions(interactions);
+                } else {
+                    $('#interaction-btn').text('Select Target First ▾').prop('disabled', true);
+                    $('#interaction-list').empty();
+                    $('#interaction-panel').hide();
+                    $('#disorder-legend').hide();
+                }
+            }
+
+            function populateInteractions(interactions) {
+                let listContainer = $('#interaction-list');
+                listContainer.empty();
+
+                // Get current ID from loaded Cif if exists to maintain Active state?
+                // Or just rely on visual refresh
+
+                if (interactions.length === 0) {
+                    listContainer.append('<div style="padding:10px; color:#888;">No interactions found</div>');
+                    $('#interaction-btn').text('No Interactions ▾').prop('disabled', true);
+                    return;
+                }
+
+                $('#interaction-btn').text('Select Interaction (' + interactions.length + ') ▾').prop('disabled', false);
+
+                // Add "Clear / Back to Monomer" Option
+                let clearItem = $('<div>').addClass('dropdown-item').html('<strong>&times; Clear Selection (Back to Monomer)</strong>');
+                clearItem.css('color', '#ff8888');
+                clearItem.on('click', function () {
+                    $('.dropdown-item').removeClass('active');
+                    $('#interaction-btn').text('Select Interaction (' + interactions.length + ') ▾');
+                    $('#interaction-dropdown').hide();
+
+                    // Re-enter Monomer Mode
+                    let target = $('#targetSelect').val();
+                    if (target) {
+                        enterMonomerMode(target, interactions);
+                    }
+                });
+                listContainer.append(clearItem);
+
+                // Interactions are already sorted from updateFileLists -> groupedData
+                interactions.forEach(function (f) {
+                    let label = f.chainB;
+                    if ($('#sortSelect').val() === 'confidence' && f.confidence) {
+                        label += ` (Conf: ${f.confidence.toFixed(2)})`;
+                    } else if ($('#sortSelect').val() === 'date' && f.mtime) {
+                        let d = new Date(f.mtime * 1000);
+                        label += ` (${d.toLocaleDateString()})`;
+                    }
+
+                    let item = $('<div>').addClass('dropdown-item').text(label);
+                    item.data('id', f.id);
+                    // Add click handler
+                    item.on('click', function () {
+                        $('.dropdown-item').removeClass('active');
+                        $(this).addClass('active');
+                        $('#interaction-btn').text(label + ' ▾');
+                        $('#interaction-dropdown').hide();
+                        // Disable Monomer Mode if explicitly selecting single interaction
+                        monomerMode = false;
+                        $('#interaction-panel').hide();
+                        $('#sites-panel').hide();
+                        loadVisualization(f.id);
+                    });
+
+                    listContainer.append(item);
+                });
+
+                // Auto-enter Monomer Mode if target changed and no specific interaction selected
+                let target = $('#targetSelect').val();
+                if (target) {
+                    enterMonomerMode(target, interactions);
+                }
+            }
+
+            function updateViewerStyles() {
+                if (!viewer) return;
+
+                // 1. Interaction Mode (Chain A/B/C in a single model)
+                if (!monomerMode) {
+                    renderScene();
+                    return;
+                }
+
+                // 2. Monomer Mode (Multiple Models)
+                viewer.removeAllLabels();
+                viewer.removeAllShapes();
+                let showDistances = $('#chk-distances').is(':checked');
+
+                // A. Style the Main Monomer
+                if (monomerModel) {
+                    let colorFunc = function (atom) {
+                        if (currentDisorderData) {
+                            let val = currentDisorderData[atom.resi] || currentDisorderData[String(atom.resi)];
+                            if (val !== undefined) {
+                                let rgbLow = hexToRgb($('#disorder-color-low').val());
+                                let rgbHigh = hexToRgb($('#disorder-color-high').val());
+                                let r = Math.floor(rgbLow.r + (val * (rgbHigh.r - rgbLow.r)));
+                                let g = Math.floor(rgbLow.g + (val * (rgbHigh.g - rgbLow.g)));
+                                let b = Math.floor(rgbLow.b + (val * (rgbHigh.b - rgbLow.b)));
+                                return `rgb(${r},${g},${b})`;
+                            }
+                        }
+                        return '#888888';
+                    };
+
+                    let fRange = null;
+                    if (focusedResidue !== null) {
+                        fRange = getResidueRange(focusedResidue, currentFocusRange);
+                    } else if (focusedDomain !== null) {
+                        fRange = [];
+                        let min = Math.max(1, focusedDomain.min - currentFocusRange);
+                        let max = focusedDomain.max + currentFocusRange;
+                        for (let i = min; i <= max; i++) fRange.push(i);
+                    }
+
+                    if (fRange !== null) {
+                        monomerModel.setStyle({}, { cartoon: { color: '#ccc', opacity: 0.1 } });
+                        monomerModel.setStyle({ resi: fRange }, { cartoon: { colorfunc: colorFunc } });
+                    } else {
+                        monomerModel.setStyle({}, { cartoon: { colorfunc: colorFunc } });
+                    }
+
+                    // For each partner model...
+                    for (let fileId in superimposedModels) {
+                        let m = superimposedModels[fileId];
+                        let pData = selectedPPIsData[fileId];
+                        let color = pData.color;
+
+                        if (fRange !== null) {
+                            let minRes = Math.min(...fRange);
+                            let maxRes = Math.max(...fRange);
+
+                            // All residues of this partner model
+                            m.setStyle({ chain: 'B' }, { cartoon: { color: '#ccc', opacity: 0.1 } });
+
+                            // BUT if partner residues contact ANY residue in the focused range, highlight them
+                            if (pData.interactions) {
+                                let contactingResIds = pData.interactions
+                                    .filter(row => {
+                                        let rA = parseInt(row.res_A);
+                                        return rA >= minRes && rA <= maxRes;
+                                    })
+                                    .map(row => row.res_B);
+
+                                if (contactingResIds.length > 0) {
+                                    // USER REQUEST: "show a larger segment of the interacting proteins as well"
+                                    let expandedPartnerResIds = new Set();
+                                    contactingResIds.forEach(resB => {
+                                        let rangeB = getResidueRange(resB, currentFocusRange);
+                                        rangeB.forEach(id => expandedPartnerResIds.add(id));
+                                    });
+                                    m.setStyle({ chain: 'B', resi: Array.from(expandedPartnerResIds) }, { cartoon: { color: color } });
+
+                                    // Draw distance lines and labels if enabled
+                                    if (showDistances) {
+                                        let focusedRows = pData.interactions.filter(row => {
+                                            let rA = parseInt(row.res_A);
+                                            return rA >= minRes && rA <= maxRes;
+                                        });
+
+                                        focusedRows.forEach(row => {
+                                            let resA = parseInt(row.res_A);
+                                            let resB = parseInt(row.res_B);
+                                            let dist = parseFloat(row.dist);
+
+                                            // Get atoms (Chain A is in monomerModel, Chain B is in partner model m)
+                                            let atomsA = monomerModel.selectedAtoms({ chain: 'A', resi: resA, atom: 'CA' });
+                                            let atomsB = m.selectedAtoms({ chain: 'B', resi: resB, atom: 'CA' });
+
+                                            if (atomsA.length === 0) atomsA = monomerModel.selectedAtoms({ chain: 'A', resi: resA });
+                                            if (atomsB.length === 0) atomsB = m.selectedAtoms({ chain: 'B', resi: resB });
+
+                                            if (atomsA.length > 0 && atomsB.length > 0) {
+                                                let p1 = atomsA[0];
+                                                let p2 = atomsB[0];
+                                                let lineColor = '#BF00FF';
+
+                                                viewer.addLine({
+                                                    start: { x: p1.x, y: p1.y, z: p1.z },
+                                                    end: { x: p2.x, y: p2.y, z: p2.z },
+                                                    dashed: true,
+                                                    color: lineColor,
+                                                    lineWidth: 2
+                                                });
+
+                                                viewer.addLabel(dist.toFixed(1) + "Å", {
+                                                    position: {
+                                                        x: (p1.x + p2.x) / 2,
+                                                        y: (p1.y + p2.y) / 2,
+                                                        z: (p1.z + p2.z) / 2
+                                                    },
+                                                    backgroundColor: 'white',
+                                                    backgroundOpacity: 1.0,
+                                                    fontColor: 'black',
+                                                    fontSize: 8
+                                                });
+                                            }
+                                        });
+                                    }
+                                }
+                            }
+                        } else {
+                            m.setStyle({ chain: 'B' }, { cartoon: { color: color } });
+                        }
+                        m.setStyle({ chain: 'A' }, { hidden: true });
+                    }
+                }
+
+                viewer.render();
+
+                // Toggle Clear Focus button
+                // Toggle Clear Focus button and Range control
+                if (focusedResidue !== null || focusedDomain !== null) {
+                    $('#clear-focus-btn').show();
+                    $('#focus-range-control').show();
+                } else {
+                    $('#clear-focus-btn').hide();
+                    $('#focus-range-control').hide();
+                }
+            }
+
+            function enterMonomerMode(target, interactions) {
+                monomerMode = true;
+                $('#return-monomer-btn').hide();
+                $('#current-file-date').hide();
+                currentMonomerTarget = target;
+                $('#metrics').hide();
+                $('#protein-info').hide();
+                $('#string-panel').hide();
+                $('#go-panel').hide();
+                $('#sequence-viewer').hide();
+                $('.legend').hide();
+                $('.legend').hide();
+                // Show Disorder Legend in Monomer Mode - Position Centered Bottom
+                // Use explicit style to override interaction mode settings
+                $('#disorder-legend').css({ 'bottom': '20px', 'left': '50%', 'transform': 'translateX(-50%)' }).show();
+                updateDisorderLegendGradient(); // Ensure gradient matches current colors
+                $('#settings-panel').show(); // Enable settings in Monomer Mode for color selection
+                $('#interaction-settings').hide(); // Hide interaction-specific settings
+                $('#disorder-settings').css({ 'border-top': 'none', 'margin-top': '0', 'padding-top': '0' }); // Remove separator in monomer mode
+
+                // Always show interaction panel in Monomer Mode
+                $('#interaction-panel').show();
+                $('#sites-panel').css('display', 'flex');
+                $('#copy-link-btn').show();
+
+                // Ensure screenshot button is visible
+                // Monomer Mode: To the left of the interaction sites panel
+                // $('#screenshot-btn').css({ 'left': 'auto', 'right': '340px' }).show();
+
+                // Expand Layout for Monomer Mode
+                $('#container').css('left', '0px').css('top', '50px').css('bottom', '0px');
+                $('#viz-border').css('left', '0px').css('top', '50px').css('bottom', '0px').css('border-color', 'transparent');
+
+                // Adjust Interaction Panel to match
+                $('#interaction-panel').css('top', '50px').css('bottom', '10px');
+
+                $('#loading').text('Loading Monomer...').show();
+
+                // Update URL to remove interaction but preserve view state if loading
+                let params = new URLSearchParams();
+                params.set('target', target);
+
+                // Check if we have a view parameter in the current URL (e.g. initial load)
+                let currentParams = new URLSearchParams(window.location.search);
+                if (currentParams.has('view')) {
+                    params.set('view', currentParams.get('view'));
+                }
+
+                let newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + '?' + params.toString();
+                window.history.pushState({ path: newUrl }, '', newUrl);
+
+                // Clear Viewer
+                viewer.removeAllModels();
+                viewer.removeAllLabels();
+                viewer.removeAllShapes();
+                superimposedModels = {};
+                selectedPPIsData = {};
+                updateSitesPanel();
+                $('#sites-panel').css('display', 'flex');
+
+                // Load Monomer
+                let url = "/data/monomer_cif/" + encodeURIComponent(target);
+                $.ajax({
+                    url: url,
+                    success: function (cifData) {
+                        if (!monomerMode) return; // Prevent race condition if user switched to interaction
+                        currentCifData = cifData; // Store globally for color updates
+
+                        // Fetch Disorder Data
+                        $.ajax({
+                            url: '/api/disorder/' + encodeURIComponent(target),
+                            dataType: 'json',
+                            success: function (disorderData) {
+                                if (!monomerMode) return;
+
+                                currentDisorderData = disorderData; // Store globally
+
+                                monomerModel = viewer.addModel(cifData, "cif");
+
+                                // Color based on disorder
+                                // High disorder (near 1.0) -> Lighter (Higher RGB values)
+                                // Low disorder (near 0.0) -> Darker (Lower RGB values)
+                                let colorFunc = function (atom) {
+                                    let resi = atom.resi;
+                                    let val = disorderData[resi];
+                                    if (val === undefined) {
+                                        // Try string key if resi is int
+                                        val = disorderData[String(resi)];
+                                    }
+
+                                    if (val === undefined) return '#888888'; // Default gray if no data
+
+                                    // Interpolate color based on Low/High inputs
+                                    let lowColor = $('#disorder-color-low').val();
+                                    let highColor = $('#disorder-color-high').val();
+
+                                    // Helper function needed or duplicate logic
+                                    let rgbLow = hexToRgb(lowColor);
+                                    let rgbHigh = hexToRgb(highColor);
+
+                                    // Linear interpolation
+                                    let r = Math.floor(rgbLow.r + (val * (rgbHigh.r - rgbLow.r)));
+                                    let g = Math.floor(rgbLow.g + (val * (rgbHigh.g - rgbLow.g)));
+                                    let b = Math.floor(rgbLow.b + (val * (rgbHigh.b - rgbLow.b)));
+
+                                    return 'rgb(' + r + ',' + g + ',' + b + ')';
+                                };
+
+                                updateViewerStyles();
+                                viewer.zoomTo();
+                                applyHoverListeners(); // Re-apply hover
+                                viewer.render();
+                                $('#loading').hide();
+
+                                $('#loading').hide();
+
+                                // Populate Panel
+                                populateInteractionPanel(interactions);
+
+                                // Restore State (Camera etc)
+                                restoreAppState();
+                            },
+                            error: function () {
+                                if (!monomerMode) return;
+                                currentDisorderData = null; // Clear if failed
+                                // Fallback to standard gray
+                                monomerModel = viewer.addModel(cifData, "cif");
+                                viewer.setStyle({}, { cartoon: { color: '#888888' } });
+                                viewer.zoomTo();
+                                applyHoverListeners(); // Re-apply hover
+                                viewer.render();
+                                $('#loading').hide();
+                                populateInteractionPanel(interactions);
+                                restoreAppState();
+                            }
+                        });
+                    },
+                    error: function () {
+                        $('#loading').html('<span style="color:red">Failed to load Monomer.</span>');
+                    }
+                });
+            }
+
+            function getStateString() {
+                let state = {};
+
+                // 1. Camera State (Orientation & Zoom)
+                // viewer.getView() returns array of matrix + zoom
+                if (viewer) {
+                    // Round floats to 4 decimal places to save space
+                    state.o = viewer.getView().map(v => parseFloat(v.toFixed(4)));
+                }
+
+                // 2. Settings
+                state.s = {
+                    bs: $('#chk-ball-stick').is(':checked') ? 1 : 0,
+                    d: $('#chk-distances').is(':checked') ? 1 : 0,
+                    ppi: $('#chk-ppi-only').is(':checked') ? 1 : 0,
+                    nt: $('#chk-nterm-label').is(':checked') ? 1 : 0
+                };
+
+                // 3. Monomer Context
+                if (monomerMode) {
+                    state.m = {
+                        g: groupDomains ? 1 : 0,
+                        c: domainClusterDistance,
+                        w: currentFocusRange
+                    };
+                    if (focusedResidue) state.m.f = focusedResidue;
+                    if (focusedDomain) state.m.d = [focusedDomain.min, focusedDomain.max];
+
+                    // Save Selected Interactors (IDs)
+                    if (selectedPPIsData && Object.keys(selectedPPIsData).length > 0) {
+                        state.m.i = Object.keys(selectedPPIsData);
+                    }
+                }
+
+                // Encode to Base64 (simple JSON stringify -> btoa)
+                try {
+                    let json = JSON.stringify(state);
+                    return btoa(json);
+                } catch (e) {
+                    console.error("Error encoding state:", e);
+                    return null;
+                }
+            }
+
+            function updateURL() {
+                if (isRestoring) return; // Skip URL updates during state restoration
+                let target = $('#targetSelect').val();
+                let params = new URLSearchParams();
+
+                // Preserve existing params first to check context
+                let currentUrlParams = new URLSearchParams(window.location.search);
+
+                if (currentMonomerTarget) {
+                    params.set('target', currentMonomerTarget);
+                } else if (target) {
+                    params.set('target', target);
+                } else if (currentUrlParams.has('target')) {
+                    params.set('target', currentUrlParams.get('target'));
+                }
+
+                if (currentUrlParams.has('interaction')) {
+                    params.set('interaction', currentUrlParams.get('interaction'));
+                }
+
+                let stateStr = getStateString();
+                if (stateStr) params.set('view', stateStr);
+
+                let newUrl = window.location.pathname + '?' + params.toString();
+                window.history.replaceState({ path: newUrl }, '', newUrl);
+            }
+
+            // Global function to restore state
+            window.restoreAppState = function () {
+                let params = new URLSearchParams(window.location.search);
+                let stateStr = params.get('view');
+                if (!stateStr) return;
+
+                isRestoring = true;
+
+                try {
+                    let state = JSON.parse(atob(stateStr));
+
+                    // 1. Restore Settings
+                    if (state.s) {
+                        $('#chk-ball-stick').prop('checked', !!state.s.bs);
+                        $('#chk-distances').prop('checked', !!state.s.d);
+                        $('#chk-ppi-only').prop('checked', !!state.s.ppi);
+                        $('#chk-nterm-label').prop('checked', !!state.s.nt);
+                        // Ensure annotations are visible
+                        $('body').removeClass('hide-annotations');
+                    }
+
+                    // 2. Restore Monomer Context (if applicable)
+                    if (state.m) {
+                        if (state.m.g !== undefined) {
+                            groupDomains = !!state.m.g;
+                            $('#chk-group-domains').prop('checked', groupDomains).trigger('change');
+                        }
+                        if (state.m.c) {
+                            domainClusterDistance = state.m.c;
+                            $('#domain-cluster-slider').val(domainClusterDistance);
+                            $('#domain-cluster-val').text(domainClusterDistance);
+                            // updateSitesPanel called by 'change' above
+                        }
+                        if (state.m.w) {
+                            currentFocusRange = state.m.w;
+                            $('#focus-range-slider').val(currentFocusRange);
+                            $('#focus-range-val').text(currentFocusRange);
+                        }
+                        if (state.m.f) focusedResidue = state.m.f;
+                        if (state.m.d && state.m.d.length === 2) {
+                            // Just set min/max, robust enough for restoring view
+                            focusedDomain = { min: state.m.d[0], max: state.m.d[1] };
+                        }
+
+                        // Restore Selected Interactors
+                        if (state.m.i && Array.isArray(state.m.i)) {
+                            state.m.i.forEach(function (id) {
+                                // Find the checkbox with this ID and check it
+                                // Method 1: Filter by data-id on parent .ip-item
+                                $('.ip-item').filter(function () {
+                                    return $(this).data('id') === id;
+                                }).find('input[type="checkbox"]').not(':checked').prop('checked', true).trigger('change');
+                            });
+                        }
+                    }
+
+                    // 3. Camera (Needs to apply AFTER render)
+                    if (state.o && viewer) {
+                        viewer.setView(state.o);
+                    }
+
+                    // Force update of styles
+                    if (monomerMode) updateViewerStyles();
+                    else renderScene();
+
+                } catch (e) {
+                    console.error("Error restoring state:", e);
+                } finally {
+                    isRestoring = false;
+                }
+            };
+
+            function applyHoverListeners() {
+                // Make atoms hoverable with Green highlight and restoration
+                viewer.setHoverable({}, true, function (atom, viewer, event, container) {
+                    if (!atom) return;
+
+                    // Highlight green - respect current mode styles?
+                    // For now, Green highlight is consistent
+                    let hlStyle = { cartoon: { color: '#00FF00' } };
+
+                    // If ball stick is ON or it's selected, show stick/sphere
+                    let key = atom.chain + "_" + atom.resi;
+                    if (selectedResidues.has(key) || $('#chk-ball-stick').is(':checked')) {
+                        hlStyle.stick = { color: '#00FF00', radius: 0.25 };
+                        hlStyle.sphere = { color: '#00FF00', scale: 0.4 };
+                    }
+                    viewer.setStyle({ chain: atom.chain, resi: atom.resi }, hlStyle);
+
+                    // If in Monomer Mode (disorder coloring), maybe we want to preserve colorFunc on unhover?
+                    // Viewer.setHoverable callback structure: (atom, viewer, event, container)
+                    // Unhover callback: (atom, viewer, event, container)
+                    viewer.render();
+
+                    // Show tooltip
+                    let fullName = threeToFull[atom.resn] || atom.resn;
+                    let html = `<strong>${fullName} (${atom.resn})</strong><br>`;
+                    html += `Chain: ${atom.chain}<br>`;
+                    html += `Residue: ${atom.resi}<br>`;
+                    if (atom.b !== undefined) {
+                        html += `pLDDT: ${atom.b.toFixed(2)}`;
+                    }
+
+                    // Show Disorder
+                    if (currentDisorderData) {
+                        let dVal = currentDisorderData[atom.resi];
+                        if (dVal === undefined) dVal = currentDisorderData[String(atom.resi)];
+
+                        if (dVal !== undefined) {
+                            html += `<br>Disorder: ${dVal.toFixed(3)}`;
+                        }
+                    }
+
+                    $('#hover-tooltip').html(html).show();
+                }, function (atom, viewer, event, container) {
+                    $('#hover-tooltip').hide();
+
+                    // Restore Style
+                    if (atom) {
+                        // Check if we are in monomer mode with disorder coloring
+                        if (monomerMode && currentDisorderData) {
+                            // Re-apply disorder color function for this atom?
+                            // 3Dmol.js setStyle is per atom. But our colorFunc was global for the model.
+                            // We can manually calculate the color again.
+                            let resi = atom.resi;
+                            let val = currentDisorderData[resi];
+                            if (val === undefined) val = currentDisorderData[String(resi)];
+
+                            let color = '#888888';
+                            if (val !== undefined) {
+                                let minVal = 50;
+                                let maxVal = 220;
+                                let intensity = Math.floor(minVal + (val * (maxVal - minVal)));
+                                color = 'rgb(' + intensity + ',' + intensity + ',' + intensity + ')';
+                            }
+                            viewer.setStyle({ chain: atom.chain, resi: atom.resi }, { cartoon: { color: color } });
+
+                        } else {
+                            // Interaction Mode or Standard Gray Monomer
+                            viewer.setStyle({ chain: atom.chain, resi: atom.resi }, getResidueStyle(atom.chain, atom.resi));
+                        }
+                        viewer.render();
+                    }
+                });
+            }
+
+            function updateDisorderLegendGradient() {
+                let lowColor = $('#disorder-color-low').val();
+                let highColor = $('#disorder-color-high').val();
+                // Update the gradient div background
+                // The gradient div is: $('#disorder-legend > div:nth-child(2) > div:nth-child(2)')
+                // But easier to add ID or select by style? 
+                // Let's look at HTML structure: 
+                // <div style="flex-grow: 1; height: 15px; background: linear-gradient(...); ...">
+
+                $('#disorder-legend').find('div[style*="flex-grow: 1"]').css(
+                    'background', `linear-gradient(to right, ${lowColor}, ${highColor})`
+                );
+            }
+
+            // Function helper
+            function getResidueRange(center, range) {
+                if (center === null) return [];
+                let centerInt = parseInt(center);
+                let start = centerInt - range;
+                let end = centerInt + range;
+                let resis = [];
+                for (let i = start; i <= end; i++) {
+                    resis.push(i);
+                }
+                return resis;
+            }
+
+            function hexToRgb(hex) {
+                // Expand shorthand form (e.g. "03F") to full form (e.g. "0033FF")
+                var shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+                hex = hex.replace(shorthandRegex, function (m, r, g, b) {
+                    return r + r + g + g + b + b;
+                });
+
+                var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                return result ? {
+                    r: parseInt(result[1], 16),
+                    g: parseInt(result[2], 16),
+                    b: parseInt(result[3], 16)
+                } : null;
+            }
+
+            // Add Event Listeners for Color Inputs
+            // Add Event Listeners for Color Inputs
+            $('#disorder-color-low, #disorder-color-high').on('input change', function () {
+                updateDisorderLegendGradient();
+
+                // Re-render scene to apply new colors
+                if (currentCifData) {
+                    if (monomerMode) {
+                        // In monomer mode, re-apply the style with the new colors
+                        if (currentDisorderData) {
+                            let colorFunc = function (atom) {
+                                let resi = atom.resi;
+                                let val = currentDisorderData[resi];
+                                if (val === undefined) {
+                                    val = currentDisorderData[String(resi)];
+                                }
+
+                                if (val === undefined) return '#888888'; // Default gray if no data
+
+                                // Interpolate color based on Low/High inputs
+                                let lowColor = $('#disorder-color-low').val();
+                                let highColor = $('#disorder-color-high').val();
+
+                                let rgbLow = hexToRgb(lowColor);
+                                let rgbHigh = hexToRgb(highColor);
+
+                                // Linear interpolation
+                                let r = Math.floor(rgbLow.r + (val * (rgbHigh.r - rgbLow.r)));
+                                let g = Math.floor(rgbLow.g + (val * (rgbHigh.g - rgbLow.g)));
+                                let b = Math.floor(rgbLow.b + (val * (rgbHigh.b - rgbLow.b)));
+
+                                return 'rgb(' + r + ',' + g + ',' + b + ')';
+                            };
+                            viewer.setStyle({}, { cartoon: { colorfunc: colorFunc } });
+                            viewer.render();
+                        }
+                    } else {
+                        // Interaction Mode
+                        renderScene();
+                    }
+                }
+            });
+
+            // Helper for HSL to Hex
+            function hslToHex(h, s, l) {
+                l /= 100;
+                const a = s * Math.min(l, 1 - l) / 100;
+                const f = n => {
+                    const k = (n + h / 30) % 12;
+                    const color = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+                    return Math.round(255 * color).toString(16).padStart(2, '0');
+                };
+                return `#${f(0)}${f(8)}${f(4)}`;
+            }
+
+            function populateInteractionPanel(interactions) {
+                console.log("Populating interaction panel with", interactions.length, "items");
+                let container = $('#ip-list');
+                container.empty();
+
+                // Clear cached GO terms when panel is populated
+                let proteinGoTerms = {}; // Symbol -> Array of GO term strings
+
+                // Suggested Terms
+                const commonTerms = ["Nucleus", "Cytoplasm", "Membrane", "Mitochondrion", "Extracellular", "Ribosome"];
+                let suggestedContainer = $('#suggested-terms-container');
+                suggestedContainer.empty();
+                commonTerms.forEach(term => {
+                    let btn = $('<button>')
+                        .text(term)
+                        .addClass('suggested-term-btn')
+                        .css({
+                            'font-size': '0.75em',
+                            'padding': '2px 6px',
+                            'cursor': 'pointer',
+                            'background': '#333',
+                            'color': '#ddd',
+                            'border': '1px solid #555',
+                            'border-radius': '3px'
+                        })
+                        .on('click', function () {
+                            let currentVal = $('#ip-search').val();
+                            if (currentVal === term) {
+                                $('#ip-search').val('').trigger('input');
+                            } else {
+                                $('#ip-search').val(term).trigger('input');
+                            }
+                        });
+                    suggestedContainer.append(btn);
+                });
+
+                // Fetch GO terms for all proteins in the interaction list
+                let symbols = interactions.map(f => f.chainB).filter(s => s && s !== "Chain B");
+                console.log("Fetching GO terms for", symbols.length, "symbols");
+                if (symbols.length > 0) {
+                    $.ajax({
+                        url: '/api/go_batch',
+                        method: 'POST',
+                        data: JSON.stringify(symbols),
+                        contentType: 'application/json',
+                        success: function (data) {
+                            console.log("GO batch fetch successful", Object.keys(data).length, "results");
+                            for (let symbol in data) {
+                                proteinGoTerms[symbol] = data[symbol].map(go => go.name.toLowerCase());
+                            }
+                            // Re-filter now that we have GO data
+                            filterList();
+                        },
+                        error: function (xhr, status, err) {
+                            console.error("GO batch fetch failed", status, err);
+                        }
+                    });
+                }
+
+                // Filter Logic Function
+                function filterList() {
+                    let search = $('#ip-search').val().toLowerCase();
+                    let minConf = parseFloat($('#ip-conf-slider').val());
+
+                    $('.ip-item').each(function () {
+                        let item = $(this);
+                        let conf = parseFloat(item.data('conf') || 0);
+                        let text = item.text().toLowerCase();
+                        let annotation = (item.data('annotation') || "").toLowerCase();
+                        let symbol = item.data('symbol') || "";
+                        let goTerms = proteinGoTerms[symbol] || [];
+
+                        let show = true;
+                        if (conf < minConf) show = false;
+
+                        let matchesSearch = !search ||
+                            text.includes(search) ||
+                            annotation.includes(search) ||
+                            goTerms.some(term => term.includes(search));
+
+                        if (!matchesSearch) show = false;
+
+                        item.toggle(show);
+                    });
+                }
+
+                // Attach Filter Events
+                $('#ip-search').off('input').on('input', function () {
+                    let val = $(this).val();
+                    $('.suggested-term-btn').each(function () {
+                        if ($(this).text() === val) {
+                            $(this).css({ 'background': '#007bff', 'border-color': '#0056b3' });
+                        } else {
+                            $(this).css({ 'background': '#333', 'border-color': '#555' });
+                        }
+                    });
+                    filterList();
+                });
+                $('#ip-conf-slider').off('input').on('input', function () {
+                    $('#ip-conf-val').text(parseFloat($(this).val()).toFixed(2));
+                    filterList();
+                });
+
+                // Select/Deselect All Events
+                $('#btn-ip-select-all').off('click').on('click', function () {
+                    // Select only visible items that are unchecked
+                    $('.ip-item:visible input[type="checkbox"]').not(':checked').prop('checked', true).trigger('change');
+                    updateURL(); // Trigger update after bulk change
+                });
+
+                $('#btn-ip-deselect-all').off('click').on('click', function () {
+                    // Deselect all items to clear the view
+                    $('.ip-item input[type="checkbox"]:checked').prop('checked', false).trigger('change');
+                    updateURL();
+                });
+
+                // 40 Color Cycle - Golden Angle for distinctness
+                let colors = [];
+                for (let i = 0; i < 40; i++) {
+                    // Golden Angle approx 137.5
+                    let hue = (i * 137.5) % 360;
+                    // Use 70% Saturation, 50% Lightness
+                    colors.push(hslToHex(hue, 70, 50));
+                }
+
+                interactions.forEach((f, index) => {
+                    let div = $('<div>').addClass('ip-item');
+                    div.data('conf', f.confidence);
+                    div.data('id', f.id);
+                    div.data('symbol', f.chainB);
+
+                    let annotation = (f.proteinInfo && f.proteinInfo.annotation) ? f.proteinInfo.annotation : "";
+                    div.data('annotation', annotation);
+
+                    let color = colors[index % 40];
+
+                    let cb = $('<input>').attr('type', 'checkbox');
+                    // Add color swatch
+                    let swatch = $('<span>').css({
+                        'display': 'inline-block',
+                        'width': '10px',
+                        'height': '10px',
+                        'background-color': color,
+                        'margin-left': '5px',
+                        'margin-right': '5px',
+                        'border-radius': '50%'
+                    });
+
+                    let lbl = $('<label>').text(f.chainB + (f.confidence ? ` (${f.confidence.toFixed(2)})` : ""));
+                    if (annotation) lbl.attr('title', annotation);
+
+                    // Click Handler
+                    cb.on('change', function () {
+                        if ($(this).is(':checked')) {
+                            addSuperimposedModel(f.id, f.chainB, color);
+                        } else {
+                            removeSuperimposedModel(f.id);
+                        }
+                        updateURL();
+                    });
+
+                    lbl.on('click', function () {
+                        cb.prop('checked', !cb.prop('checked')).trigger('change');
+                    });
+
+                    div.append(cb).append(swatch).append(lbl);
+                    container.append(div);
+                });
+
+                // Trigger initial filter
+                filterList();
+            }
+
+            function addSuperimposedModel(fileId, label, color) {
+                if (superimposedModels[fileId]) return;
+
+                // Fetch CSV and Metrics in parallel with CIF
+                let csvUri = '/data/csv/' + fileId;
+                let metricsUri = '/api/metrics/' + fileId;
+                let cifUri = '/data/cif/' + fileId;
+
+                // Create placeholder in selectedPPIsData
+                selectedPPIsData[fileId] = {
+                    name: label,
+                    color: color,
+                    interactions: [],
+                    metrics: {}
+                };
+
+                $.ajax({
+                    url: cifUri,
+                    success: function (cifData) {
+                        let m = viewer.addModel(cifData, "cif");
+
+                        // Style: Interactive Chain B
+                        // We need to know which chain is B. Usually it's chain B in the file.
+                        // In 1-v-proteome files, Chain A is target, Chain B is interactor.
+                        m.setStyle({ chain: 'A' }, { hidden: true }); // Hide Target Chain in complex (use Monomer)
+
+                        // Use assigned color
+                        m.setStyle({ chain: 'B' }, { cartoon: { color: color } });
+
+                        // Align Chain A of NEW model to Chain A of Monomer.
+                        try {
+                            viewer.align({ model: m, chain: 'A' }, { model: viewer.getModel(0), chain: 'A' });
+                        } catch (e) {
+                            console.error("Alignment failed", e);
+                        }
+
+                        superimposedModels[fileId] = m;
+                        updateViewerStyles();
+                    }
+                });
+
+                // Fetch Interactions CSV
+                $.ajax({
+                    url: csvUri,
+                    success: function (csvText) {
+                        selectedPPIsData[fileId].interactions = parseCSV(csvText);
+                        updateSitesPanel();
+                    }
+                });
+
+                // Fetch Metrics JSON
+                $.ajax({
+                    url: metricsUri,
+                    success: function (metrics) {
+                        selectedPPIsData[fileId].metrics = metrics;
+                        updateSitesPanel();
+                    }
+                });
+            }
+
+            function removeSuperimposedModel(fileId) {
+                if (superimposedModels[fileId]) {
+                    viewer.removeModel(superimposedModels[fileId]);
+                    delete superimposedModels[fileId];
+                    delete selectedPPIsData[fileId];
+                    updateViewerStyles();
+                    updateSitesPanel();
+                }
+            }
+
+            function updateSitesPanel() {
+                let listContainer = $('#sites-partner-list');
+                let summaryContainer = $('#sites-summary');
+                let hotspotSection = $('#hotspot-section');
+                let hotspotList = $('#hotspot-list');
+                let domainHotspotSection = $('#domain-hotspot-section');
+                let domainHotspotList = $('#domain-hotspot-list');
+                let partnerSection = $('#partner-interactions-section');
+                let partnerList = $('#partner-highlight-list');
+
+                listContainer.empty();
+                hotspotList.empty();
+                domainHotspotList.empty();
+                partnerList.empty();
+
+                let partnerCount = Object.keys(selectedPPIsData).length;
+                if (partnerCount === 0) {
+                    summaryContainer.show();
+                    hotspotSection.hide();
+                    domainHotspotSection.hide();
+                    partnerSection.hide();
+                    return;
+                }
+
+                summaryContainer.hide();
+
+                // Group interactions by monomer residue (res_A)
+                // Map: resA -> { resName, partners: [ { name, color, dist, plddt_B, pae ... } ] }
+                let monomerSiteMap = {};
+
+                for (let fileId in selectedPPIsData) {
+                    let data = selectedPPIsData[fileId];
+                    if (!data.interactions) continue;
+
+                    data.interactions.forEach(row => {
+                        let dist = parseFloat(row.dist);
+                        if (dist < 4.0) {
+                            let resA = row.res_A;
+                            if (!monomerSiteMap[resA]) {
+                                monomerSiteMap[resA] = {
+                                    resName: row.res_A_name,
+                                    partners: []
+                                };
+                            }
+
+                            // Check if this partner-residue combo already added (CSV might have multiple atoms per residue)
+                            // Usually residues are unique in the filtered CSV but let's be safe
+                            let existing = monomerSiteMap[resA].partners.find(p => p.fileId === fileId);
+                            if (!existing || parseFloat(row.dist) < existing.dist) {
+                                if (existing) {
+                                    // Keep closest contact for that residue
+                                    Object.assign(existing, {
+                                        dist: dist,
+                                        plddt_B: row.plddt_B,
+                                        pae: row.pae,
+                                        res_B: row.res_B,
+                                        res_B_name: row.res_B_name
+                                    });
+                                } else {
+                                    monomerSiteMap[resA].partners.push({
+                                        fileId: fileId,
+                                        name: data.name,
+                                        color: data.color,
+                                        dist: dist,
+                                        plddt_A: row.plddt_A,
+                                        plddt_B: row.plddt_B,
+                                        pae: row.pae,
+                                        iptm: row.iptm,
+                                        res_B: row.res_B,
+                                        res_B_name: row.res_B_name
+                                    });
+                                }
+                            }
+                        }
+                    });
+                }
+
+                // Sort residues by:
+                // 1. Number of partners (Descending)
+                // 2. Monomer pLDDT (Descending)
+                let sortedResIds = Object.keys(monomerSiteMap).sort((a, b) => {
+                    let partnersA = monomerSiteMap[a].partners.length;
+                    let partnersB = monomerSiteMap[b].partners.length;
+                    if (partnersB !== partnersA) return partnersB - partnersA;
+
+                    // Fallback to pLDDT if available
+                    let plddtA = monomerSiteMap[a].partners[0].plddt_A || 0;
+                    let plddtB = monomerSiteMap[b].partners[0].plddt_A || 0;
+                    return plddtB - plddtA;
+                });
+
+                if (groupDomains) {
+                    let sortedResNums = Object.keys(monomerSiteMap).map(Number).sort((a, b) => a - b);
+                    let domains = [];
+                    let currentDomain = null;
+
+                    sortedResNums.forEach(resNum => {
+                        if (!currentDomain || (resNum - currentDomain.max > domainClusterDistance)) {
+                            currentDomain = {
+                                min: resNum,
+                                max: resNum,
+                                resIds: [String(resNum)],
+                                partners: []
+                            };
+                            domains.push(currentDomain);
+                        } else {
+                            currentDomain.max = resNum;
+                            currentDomain.resIds.push(String(resNum));
+                        }
+                    });
+
+                    domains.forEach(dom => {
+                        let partnerMap = {}; // fileId -> aggregated partner data
+                        dom.resIds.forEach(rid => {
+                            monomerSiteMap[rid].partners.forEach(p => {
+                                if (!partnerMap[p.fileId]) {
+                                    partnerMap[p.fileId] = {
+                                        name: p.name,
+                                        color: p.color,
+                                        minDist: p.dist,
+                                        avgDist: 0,
+                                        pCount: 0,
+                                        res_B_list: []
+                                    };
+                                }
+                                let pm = partnerMap[p.fileId];
+                                if (p.dist < pm.minDist) pm.minDist = p.dist;
+                                pm.avgDist += p.dist;
+                                pm.pCount++;
+                                pm.res_B_list.push({ res: p.res_B, name: p.res_B_name, dist: p.dist });
+                            });
+                        });
+                        dom.name = `Region ${dom.min}-${dom.max}`;
+                        dom.partners = Object.values(partnerMap);
+
+                        let block = $('<div>').addClass('res-group-block');
+                        let header = $('<div>').addClass('res-group-header').css('border-left', '4px solid #337ab7');
+                        header.append($('<span>').text(dom.name));
+                        let pCount = dom.partners.length;
+                        header.append($('<span>').css({ 'font-size': '0.8em', 'color': '#666' })
+                            .text(`${pCount} Partner${pCount > 1 ? 's' : ''}`));
+
+                        header.on('click', function () {
+                            let range = [];
+                            for (let i = dom.min; i <= dom.max; i++) range.push(i);
+                            viewer.zoomTo({ chain: 'A', resi: range });
+                            focusedResidue = null;
+                            focusedDomain = dom;
+                            updateViewerStyles();
+                        });
+                        block.append(header);
+
+                        let partnersContainer = $('<div>').addClass('res-group-partners');
+                        dom.partners.forEach(p => {
+                            let row = $('<div>').addClass('partner-interaction-row');
+                            let nameLine = $('<div>').addClass('partner-name-line');
+                            let swatch = $('<span>').css({
+                                'display': 'inline-block',
+                                'width': '8px',
+                                'height': '8px',
+                                'background-color': p.color,
+                                'border-radius': '50%'
+                            });
+                            nameLine.append(swatch).append($('<span>').text(p.name));
+                            row.append(nameLine);
+
+                            let metricsLine = $('<div>').addClass('partner-metrics-line');
+                            metricsLine.append($('<span>').addClass('metric-pill').html(`Min Dist: <strong>${p.minDist.toFixed(1)}Å</strong>`));
+                            metricsLine.append($('<span>').text(`${p.pCount} site${p.pCount > 1 ? 's' : ''}`));
+                            row.append(metricsLine);
+                            partnersContainer.append(row);
+                        });
+                        block.append(partnersContainer);
+                        listContainer.append(block);
+                    });
+
+                    // Domain Hotspots
+                    let domainHotspots = domains.filter(dom => dom.partners.length > 1);
+                    if (domainHotspots.length > 0) {
+                        domainHotspots.forEach(dom => {
+                            let chip = $('<span>').addClass('site-res-chip').css({
+                                'border-color': '#856404',
+                                'background': '#fff8eb',
+                                'font-weight': 'bold',
+                                'color': '#856404'
+                            }).text(`${dom.name} (${dom.partners.length}x)`);
+
+                            chip.on('click', function () {
+                                let range = [];
+                                for (let i = dom.min; i <= dom.max; i++) range.push(i);
+                                viewer.zoomTo({ chain: 'A', resi: range });
+                                focusedResidue = null;
+                                focusedDomain = dom;
+                                updateViewerStyles();
+                            });
+                            domainHotspotList.append(chip);
+                        });
+                        domainHotspotSection.show();
+                        hotspotSection.hide();
+                    } else {
+                        domainHotspotSection.hide();
+                        hotspotSection.hide();
+                    }
+
+                } else {
+                    domainHotspotSection.hide();
+                    sortedResIds.forEach(resId => {
+                        let siteData = monomerSiteMap[resId];
+                        let resLabel = (threeToOne[siteData.resName] || siteData.resName) + resId;
+
+                        let block = $('<div>').addClass('res-group-block');
+
+                        // Header for the residue
+                        let header = $('<div>').addClass('res-group-header');
+                        header.append($('<span>').text(resLabel));
+
+                        let pCount = siteData.partners.length;
+                        header.append($('<span>').css({ 'font-size': '0.8em', 'color': '#666' })
+                            .text(`${pCount} Partner${pCount > 1 ? 's' : ''}`));
+
+                        header.on('click', function () {
+                            let range = getResidueRange(resId, currentFocusRange);
+                            viewer.zoomTo({ chain: 'A', resi: range });
+                            focusedResidue = resId;
+                            focusedDomain = null;
+                            updateViewerStyles();
+                        });
+
+                        block.append(header);
+
+                        // Partner List for this residue
+                        let partnersContainer = $('<div>').addClass('res-group-partners');
+                        siteData.partners.forEach(p => {
+                            let row = $('<div>').addClass('partner-interaction-row');
+
+                            let nameLine = $('<div>').addClass('partner-name-line');
+                            let swatch = $('<span>').css({
+                                'display': 'inline-block',
+                                'width': '8px',
+                                'height': '8px',
+                                'background-color': p.color,
+                                'border-radius': '50%'
+                            });
+                            nameLine.append(swatch).append($('<span>').text(p.name));
+                            row.append(nameLine);
+
+                            let metricsLine = $('<div>').addClass('partner-metrics-line');
+
+                            // Distance (Å)
+                            metricsLine.append($('<span>').addClass('metric-pill').html(`<strong>${p.dist.toFixed(1)}Å</strong>`));
+
+                            // Contact Residue on Partner
+                            metricsLine.append($('<span>').text(`→ ${threeToOne[p.res_B_name] || p.res_B_name}${p.res_B}`));
+
+                            // Local Metrics
+                            if (p.pae !== undefined) metricsLine.append($('<span>').addClass('metric-pill').text(`PAE: ${parseFloat(p.pae).toFixed(2)}`));
+                            if (p.plddt_B !== undefined) metricsLine.append($('<span>').addClass('metric-pill').text(`pLDDT: ${parseFloat(p.plddt_B).toFixed(0)}`));
+
+                            row.append(metricsLine);
+                            partnersContainer.append(row);
+                        });
+
+                        block.append(partnersContainer);
+                        listContainer.append(block);
+                    });
+
+                    // Residue Hotspots
+                    let hotspotResIds = sortedResIds.filter(id => monomerSiteMap[id].partners.length > 1);
+                    if (hotspotResIds.length > 0) {
+                        hotspotResIds.forEach(resId => {
+                            let siteData = monomerSiteMap[resId];
+                            let chip = $('<span>').addClass('site-res-chip').css({ 'border-color': '#d9534f', 'background': '#fff3f3', 'font-weight': 'bold' })
+                                .text(`${threeToOne[siteData.resName] || siteData.resName}${resId} (${siteData.partners.length}x)`);
+                            chip.on('click', function () {
+                                let range = getResidueRange(resId, currentFocusRange);
+                                viewer.zoomTo({ chain: 'A', resi: range });
+                                focusedResidue = resId;
+                                updateViewerStyles();
+                            });
+                            hotspotList.append(chip);
+                        });
+                        hotspotSection.show();
+                    } else {
+                        hotspotSection.hide();
+                    }
+                }
+
+                // Partner Highlights
+                let partnerSiteCounts = {};
+                let partnerMetadata = {};
+                for (let resId in monomerSiteMap) {
+                    monomerSiteMap[resId].partners.forEach(p => {
+                        partnerSiteCounts[p.fileId] = (partnerSiteCounts[p.fileId] || 0) + 1;
+                        partnerMetadata[p.fileId] = { name: p.name, color: p.color, resIds: (partnerMetadata[p.fileId]?.resIds || []) };
+                        partnerMetadata[p.fileId].resIds.push(resId);
+                    });
+                }
+
+                let sortedPartnerFileIds = Object.keys(partnerSiteCounts).sort((a, b) => partnerSiteCounts[b] - partnerSiteCounts[a]);
+                if (sortedPartnerFileIds.length > 0) {
+                    sortedPartnerFileIds.forEach(fId => {
+                        let p = partnerMetadata[fId];
+                        let count = partnerSiteCounts[fId];
+                        let chip = $('<span>').addClass('site-res-chip').css({ 'border-color': '#bee5ff' })
+
+                        let swatch = $('<span>').css({
+                            'display': 'inline-block',
+                            'width': '8px',
+                            'height': '8px',
+                            'background-color': p.color,
+                            'border-radius': '50%',
+                            'margin-right': '5px'
+                        });
+
+                        chip.append(swatch).append($('<span>').text(`${p.name} (${count} Sites)`));
+
+                        chip.on('click', function () {
+                            // Zoom to all sites for this partner
+                            viewer.zoomTo({ chain: 'A', resi: p.resIds });
+                        });
+
+                        partnerList.append(chip);
+                    });
+                    partnerSection.show();
+                } else {
+                    partnerSection.hide();
+                }
+            }
+
+            // Screenshot Button Logic
+            $('#screenshot-btn').on('click', function () {
+                // Determine filename
+                let filename = "PPI_Visualization";
+                let now = new Date();
+                let timestamp = now.getFullYear() +
+                    String(now.getMonth() + 1).padStart(2, '0') +
+                    String(now.getDate()).padStart(2, '0') + "_" +
+                    String(now.getHours()).padStart(2, '0') +
+                    String(now.getMinutes()).padStart(2, '0') +
+                    String(now.getSeconds()).padStart(2, '0');
+
+                if (monomerMode && currentMonomerTarget) {
+                    filename = currentMonomerTarget + "_" + timestamp;
+                } else if (!monomerMode) {
+                    // Interaction Mode: Target_Partner_Timestamp
+                    let target = $('#targetSelect').val();
+                    let partner = $('#interaction-btn').text().split('(')[0].trim().replace("Select Interaction ", "").replace("▾", "").trim();
+                    if (partner && partner !== "Select Interaction") {
+                        filename = target + "_" + partner + "_" + timestamp;
+                    } else {
+                        filename = target + "_Interaction_" + timestamp;
+                    }
+                }
+
+                // High Res PNG - Use fixed large dimensions (e.g. 3000px)
+                // This ensures "vector-like" quality for printing
+                let imgData = viewer.pngURI({ width: 3000, height: 3000 });
+
+                // Create link and download
+                let link = document.createElement('a');
+                link.href = imgData;
+                link.download = filename + ".png";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            });
+        }); // End of document.ready
+    </script>
+</body>
+
+</html>
