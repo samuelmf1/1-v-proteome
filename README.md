@@ -22,7 +22,7 @@ module load nextflow # or use conda
 nextflow run main.nf \
     -profile slurm \            # use this only if on a SLURM HPC
     --targets all_targets.tsv \ # custom input, default: targets.tsv
-    --filetype yaml             # json, yaml, or other supported types
+    --filetype json             # json, yaml, or other supported types
     --squashfs true             # build squashfs inputs and submit alphafast jobs
   --alphafast true            # submit alphafast jobs for each squashfs prefix
 ```
@@ -42,18 +42,35 @@ nextflow run main.nf \
 
 # Alphafast
 
+![AlphaFast overview](diagram/outputs/alphafast_0_overview.png)
+
 ```
 alphafast_submit.slurm 
   --> determine batch size and number of jobs to submit
   --> start/submit jobs
   --> schedule cleanup after all are done
+```
+
+<img src="diagram/outputs/alphafast_1_controller.png" alt="1. Controller" width="320" />
+
+```
 alphafast_task.slurm   --> wrapper for task
 alphafast_run.sh       --> the actual alphafolding
+```
+
+<img src="diagram/outputs/alphafast_2_workers.png" alt="2. Workers" width="320" />
+
+```
 alphafast_cleanup.slurm 
   --> cleans up failed runs
   --> deletes large/obsolete files from 'nada' runs with low ipTM
   --> submits PPI script
   --> schedules a resubmit after
+```
+
+<img src="diagram/outputs/alphafast_3_validator.png" alt="3. Validator" width="320" />
+
+```
 alphafast_ppi.slurm/alphafast_ppi.py 
   --> runs ppi script
   --> then organizes outputs into 
@@ -62,10 +79,16 @@ alphafast_ppi.slurm/alphafast_ppi.py
           /output_nada (success but no PPI)
 
 (after this alphafast_submit.slurm is automatically called until all structures are finished)
+```
 
+<img src="diagram/outputs/alphafast_4_analyzer.png" alt="4. Analyzer" width="320" />
+
+```
 alphafast_bundle.sh --> helper script to make a neat .tar.gz of all the PPI hits to date (all [STRUCTURE]s and all relevant files)!
 ```
 
 ```bash
 $ sbatch alphafast_submit.slurm [STRUCTURE]
 ```
+
+![Pipeline overview](diagram/outputs/alphafast_pipeline_diagram.png)

@@ -1,0 +1,25 @@
+flowchart TB
+    classDef validator fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef success fill:#C8E6C9,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    classDef reject fill:#FFF59D,stroke:#FBC02D,stroke-width:2px,color:#F57F17
+    classDef fail fill:#FFCCBC,stroke:#D32F2F,stroke-width:2px,color:#B71C1C
+    classDef decision fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#880E4F
+    classDef action fill:#BBDEFB,stroke:#1976D2,stroke-width:2px,color:#0D47A1
+
+    QC_Start{"Check Result
+Quality"}:::decision
+    
+    QC_Start -- "iPTM ≥ 0.58" --> Pass["✅ Mark as Verified
+(touch completion.txt)"]:::success
+    QC_Start -- "Low iPTM" --> Reject["🟡 Wipe Data &
+Mark as Verified"]:::reject
+    QC_Start -- "Missing / OOM" --> Fail["❌ Wipe Folder
+For Retry"]:::fail
+    
+    Pass --> Launch_PPI["🔍 Submit PPI Analyzer
+(alphafast_ppi.slurm)"]:::action
+    Reject --> Launch_PPI
+    Fail --> Launch_PPI
+    
+    Launch_PPI --> Sched_Submit["⏳ Schedule Next Submit
+(Dependency: after PPI)"]:::action

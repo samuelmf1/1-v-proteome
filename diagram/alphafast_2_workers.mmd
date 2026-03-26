@@ -1,0 +1,8 @@
+flowchart TB
+    classDef worker fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#E65100
+
+    Task_Start["⚙️ Worker Boots &
+Copies Batch"]:::worker --> Inference["🧠 Execute AlphaFast
+(alphafast_run.sh)"]:::worker
+    Inference --> Save["💾 Save Final
+Outputs"]:::worker

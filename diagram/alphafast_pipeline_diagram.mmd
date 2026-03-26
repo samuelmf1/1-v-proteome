@@ -1,0 +1,94 @@
+flowchart LR
+    %% Semantic Colors
+    classDef controller fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef worker fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#E65100
+    classDef validator fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef analyzer fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    
+    %% Status Colors
+    classDef success fill:#C8E6C9,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    classDef reject fill:#FFF59D,stroke:#FBC02D,stroke-width:2px,color:#F57F17
+    classDef fail fill:#FFCCBC,stroke:#D32F2F,stroke-width:2px,color:#B71C1C
+    
+    %% Flow Controls
+    classDef decision fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#880E4F
+    classDef endpoint fill:#1A237E,stroke:#fff,color:#fff,stroke-width:2px
+    classDef action fill:#BBDEFB,stroke:#1976D2,stroke-width:2px,color:#0D47A1
+    classDef bundle fill:#EFEBE9,stroke:#5D4037,stroke-width:2px,color:#3E2723
+    
+    Start(["🚀 sbatch alphafast_submit.slurm [target]"]) --> Controller
+    
+    subgraph Controller ["1. The Controller (submit script)"]
+        direction TB
+        Filter["🔍 Scan Dir & Filter
+Completed Files"]:::controller --> Manifest["📑 Build Remaining
+todo_manifest.txt"]:::controller
+        Manifest --> Check_Empty{"Any Files
+Remaining?"}:::decision
+        
+        Check_Empty -- Yes --> Array_Launch["🚀 Launch SLURM
+Task Array"]:::action
+        Check_Empty -- No --> End_Submit((("🏁 Done!
+All Completed"))):::endpoint
+    end
+    
+    subgraph Workers ["2. Parallel Workers (task script)"]
+        direction TB
+        Task_Start["⚙️ Worker Boots
+& Copies Batch"]:::worker --> Inference["🧠 Execute AlphaFast
+(alphafast_run.sh)"]:::worker
+        Inference --> Save["💾 Save Final
+Outputs"]:::worker
+    end
+    
+    subgraph Validator ["3. The Validator (cleanup script)"]
+        direction TB
+        QC_Start{"Check Result
+Quality"}:::decision
+        
+        QC_Start -- "iPTM ≥ 0.58" --> Pass["✅ Mark as Verified
+(touch completion.txt)"]:::success
+        QC_Start -- "Low iPTM" --> Reject["🟡 Wipe Data &
+Mark as Verified"]:::reject
+        QC_Start -- "Missing / OOM" --> Fail["❌ Wipe Folder
+For Retry"]:::fail
+        
+        Pass --> Launch_PPI["🔍 Submit PPI Analyzer
+(alphafast_ppi.slurm)"]:::action
+        Reject --> Launch_PPI
+        Fail --> Launch_PPI
+        
+        Launch_PPI --> Sched_Submit["⏳ Schedule Next Submit
+(Dependency: after PPI)"]:::action
+    end
+    
+    subgraph Analyzer ["4. The Analyzer (ppi script)"]
+        direction TB
+        PPI_Start["⚙️ Read Verified
+CIF Files"]:::analyzer --> Run_PPI["🔬 Execute Scoring
+(alphafast_ppi.py)"]:::analyzer
+        Run_PPI --> Sort{"Interface
+Found?"}:::decision
+        
+        Sort -- Yes --> Hits["📂 Move mapped dir to
+/output_hits"]:::success
+        Sort -- No --> Nada["🗑️ Move mapped dir to
+/output_nada"]:::reject
+        
+        Hits --> Clean["🧹 Purge old empty
+task wrappers"]:::analyzer
+        Nada --> Clean
+    end
+    
+    subgraph Packaging ["Manual Tools"]
+        direction TB
+        Tar["📦 Bundle Hits
+(alphafast_bundle.sh)"]:::bundle
+    end
+
+    %% Drawing the orchestration lines
+    Array_Launch == "Spawns 1 to N Workers" ==> Task_Start
+    Array_Launch -. "Schedules Cleanup (afterany)" .-> QC_Start
+    Save ====> QC_Start
+    Launch_PPI == "Spawns PPI Scoring" ==> PPI_Start
+    Sched_Submit == "Loops back with smaller batch" ===> Controller

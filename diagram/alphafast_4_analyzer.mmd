@@ -1,0 +1,20 @@
+flowchart TB
+    classDef analyzer fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef success fill:#C8E6C9,stroke:#388E3C,stroke-width:2px,color:#1B5E20
+    classDef reject fill:#FFF59D,stroke:#FBC02D,stroke-width:2px,color:#F57F17
+    classDef decision fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#880E4F
+
+    PPI_Start["⚙️ Read Verified
+CIF Files"]:::analyzer --> Run_PPI["🔬 Execute Scoring
+(alphafast_ppi.py)"]:::analyzer
+    Run_PPI --> Sort{"Interface
+Found?"}:::decision
+    
+    Sort -- Yes --> Hits["📂 Move mapped dir to
+/output_hits"]:::success
+    Sort -- No --> Nada["🗑️ Move mapped dir to
+/output_nada"]:::reject
+    
+    Hits --> Clean["🧹 Purge old empty
+task wrappers"]:::analyzer
+    Nada --> Clean

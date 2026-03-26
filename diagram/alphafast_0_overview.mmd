@@ -1,0 +1,31 @@
+flowchart LR
+    %% Semantic Colors
+    classDef controller fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef worker fill:#FFF3E0,stroke:#E65100,stroke-width:2px,color:#E65100
+    classDef validator fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    classDef analyzer fill:#F3E5F5,stroke:#6A1B9A,stroke-width:2px,color:#4A148C
+    classDef bundle fill:#EFEBE9,stroke:#5D4037,stroke-width:2px,color:#3E2723
+    
+    Start(["🚀 sbatch alphafast_submit.slurm [dataset]"]) --> Controller
+    
+    Controller["1. The Controller
+(alphafast_submit.slurm)"]:::controller
+    
+    Workers["2. Parallel Workers
+(alphafast_task.slurm)"]:::worker
+    
+    Validator["3. The Validator
+(alphafast_cleanup.slurm)"]:::validator
+    
+    Analyzer["4. The Analyzer
+(alphafast_ppi.slurm)"]:::analyzer
+    
+    Packager["Manual Bundler
+(alphafast_bundle.sh)"]:::bundle
+    
+    Controller == "Spawns 1 to N Workers" ==> Workers
+    Controller -. "Schedules Cleanup (afterany)" .-> Validator
+    Workers ====> Validator
+    Validator == "Spawns PPI Analyzer" ==> Analyzer
+    Validator == "Loops back with smaller batch" ===> Controller
+    Analyzer -. "Saves curated outputs for bundle" .-> Packager

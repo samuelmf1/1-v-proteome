@@ -1,0 +1,17 @@
+flowchart TB
+    %% Semantic Colors
+    classDef controller fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    classDef decision fill:#FCE4EC,stroke:#C2185B,stroke-width:2px,color:#880E4F
+    classDef endpoint fill:#1A237E,stroke:#fff,color:#fff,stroke-width:2px
+    classDef action fill:#BBDEFB,stroke:#1976D2,stroke-width:2px,color:#0D47A1
+    
+    Filter["🔍 Scan Dir & Filter
+Completed Files"]:::controller --> Manifest["📑 Build Remaining
+todo_manifest.txt"]:::controller
+    Manifest --> Check_Empty{"Any Files
+Remaining?"}:::decision
+    
+    Check_Empty -- Yes --> Array_Launch["🚀 Launch SLURM
+Task Array"]:::action
+    Check_Empty -- No --> End_Submit((("🏁 Done!
+All Completed"))):::endpoint
